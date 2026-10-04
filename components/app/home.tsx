@@ -118,6 +118,13 @@ export function HomeTab() {
                 <Stat label="Won" value={myRow.wins} />
                 <Stat label="Lost" value={myRow.losses} />
               </div>
+            ) : season.status === "active" && season.acceptingPlayers && !player.banned ? (
+              <div className="mt-4">
+                <p className="mb-3 text-sm text-ink-2">The season has started, but you can still join. You’ll be picked for the next match days.</p>
+                <button type="button" disabled={busy} onClick={() => act("join")} className={buttonClass("primary", "lg", "w-full bg-accent! text-accent-ink! hover:bg-accent/90!")}>
+                  {busy ? "Joining…" : "Join season"}
+                </button>
+              </div>
             ) : (
               <p className="mt-3 text-sm text-ink-2">You’re not playing in this season.</p>
             )}

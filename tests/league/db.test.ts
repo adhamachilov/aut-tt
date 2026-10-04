@@ -35,7 +35,7 @@ async function season(column?: string, valueSql?: string): Promise<string> {
 const join = (s: string, p: string, force = false) => db.query("select public.join_season($1, $2, $3)", [s, p, force]);
 const start = (s: string) => db.query("select public.start_season($1)", [s]);
 const addDay = async (s: string, ids: string[], perPlayer: number, date = "2026-10-05") =>
-  (await db.query<{ day: number }>("select public.add_match_day($1, $2::date, $3::jsonb) as day", [s, date, JSON.stringify(planMatchDay(ids, perPlayer, []))])).rows[0].day;
+  (await db.query<{ day: number }>("select public.add_match_day($1, $2::date, $3::jsonb) as day", [s, date, JSON.stringify(planMatchDay(ids, { perPlayer }, []))])).rows[0].day;
 const count = async (sql: string, params: unknown[] = []) => (await db.query<{ n: number }>(`select count(*)::int as n ${sql}`, params)).rows[0].n;
 
 async function fails(p: Promise<unknown>): Promise<string> {
@@ -110,7 +110,7 @@ describe("match format", () => {
 });
 
 describe("starting a season", () => {
-  it("closes registration without creating matches", async () => {
+  it("starts without creating matches, and keeps registration open", async () => {
     const s = await season();
     const ids = [await player(), await player(), await player()];
     for (const p of ids) await join(s, p);
@@ -118,7 +118,10 @@ describe("starting a season", () => {
 
     expect(await count("from public.matches where season_id = $1", [s])).toBe(0);
     const { rows } = await db.query<{ status: string; registration_open: boolean }>("select status, registration_open from public.seasons where id = $1", [s]);
-    expect(rows[0]).toEqual({ status: "active", registration_open: false });
+    expect(rows[0]).toEqual({ status: "active", registration_open: true });
+    const late = await player();
+    await join(s, late);
+    expect(await count("from public.season_players where season_id = $1", [s])).toBe(4);
     expect(await fails(db.query("select public.leave_season($1, $2)", [s, ids[0]]))).toBe("season_already_started");
     expect(await fails(start(s))).toBe("season_already_started");
   });
@@ -129,12 +132,13 @@ describe("starting a season", () => {
     expect(await fails(start(s))).toBe("not_enough_players");
   });
 
-  it("only the organizer can add players once it's running, and nobody after it's finished", async () => {
+  it("only the organizer can add players once registration is closed, and nobody after it's finished", async () => {
     const s = await season();
     const [a, b] = [await player(), await player()];
     await join(s, a);
     await join(s, b);
     await start(s);
+    await db.query("update public.seasons set registration_open = false where id = $1", [s]);
     const late = await player();
     expect(await fails(join(s, late))).toBe("registration_closed");
     await join(s, late, true);

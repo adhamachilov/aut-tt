@@ -6,6 +6,7 @@ export type GamesPerMatch = (typeof GAMES_PER_MATCH)[number];
 export const DEFAULT_GAMES_PER_MATCH: GamesPerMatch = 3;
 
 export const MAX_MATCHES_PER_PLAYER = 10;
+export const MAX_MATCHES_PER_DAY = 100;
 
 export function isValidScore(games: number, a: number, b: number): boolean {
   return Number.isInteger(a) && Number.isInteger(b) && a >= 0 && b >= 0 && a + b === games && a !== b;

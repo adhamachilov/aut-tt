@@ -4,7 +4,7 @@ import { z } from "zod";
 import { env } from "@/lib/env";
 import { UserError } from "./http";
 import { planMatchDay } from "./matchday";
-import { GAMES_PER_MATCH, isValidScore, MAX_MATCHES_PER_PLAYER } from "./rules";
+import { GAMES_PER_MATCH, isValidScore, MAX_MATCHES_PER_DAY, MAX_MATCHES_PER_PLAYER } from "./rules";
 import { computeStandings } from "./standings";
 import {
   ALL_MAJORS,
@@ -114,7 +114,7 @@ const toSeason = (s: SeasonRow, now = new Date()): Season => ({
   registrationClosesAt: s.registration_closes_at,
   gamesPerMatch: s.games_per_match,
   acceptingPlayers:
-    s.status === "registration" && s.registration_open && (!s.registration_closes_at || new Date(s.registration_closes_at) > now),
+    s.status !== "finished" && s.registration_open && (!s.registration_closes_at || new Date(s.registration_closes_at) > now),
   startedAt: s.started_at,
   finishedAt: s.finished_at,
 });
@@ -240,7 +240,8 @@ const actionSchema = z.discriminatedUnion("action", [
     seasonId: id,
     date: z.iso.date({ error: "Choose a date." }),
     playerIds: z.array(id).min(2, "Pick at least 2 players who are here."),
-    perPlayer: z.number().int().min(1).max(MAX_MATCHES_PER_PLAYER, `At most ${MAX_MATCHES_PER_PLAYER} matches per player.`),
+    mode: z.enum(["perPlayer", "total"]),
+    count: z.number().int().min(1, "Plan at least 1 match.").max(MAX_MATCHES_PER_DAY),
   }),
   z.object({ action: z.literal("removeMatchDay"), seasonId: id, day: z.number().int().positive() }),
   z.object({ action: z.literal("finishSeason"), seasonId: id }),
@@ -269,8 +270,8 @@ export async function runAdminAction(input: unknown): Promise<void> {
 
     case "updateSeason": {
       const s = await seasonRow(a.seasonId);
-      if ((a.registrationOpen !== undefined || a.closesAt !== undefined) && s.status !== "registration") {
-        throw new UserError("Registration can only be changed before the season starts.");
+      if ((a.registrationOpen !== undefined || a.closesAt !== undefined) && s.status === "finished") {
+        throw new UserError("This season is finished.");
       }
       if (a.gamesPerMatch !== undefined && a.gamesPerMatch !== s.games_per_match) {
         const anyPlayed = maybe(
@@ -298,9 +299,10 @@ export async function runAdminAction(input: unknown): Promise<void> {
       ]);
       const inSeason = new Set(entries.map((e) => e.player_id));
       if (a.playerIds.some((p) => !inSeason.has(p))) throw new UserError("Some of those players aren't in this season.");
+      if (a.mode === "perPlayer" && a.count > MAX_MATCHES_PER_PLAYER) throw new UserError(`At most ${MAX_MATCHES_PER_PLAYER} matches per player.`);
       const plan = planMatchDay(
         a.playerIds,
-        a.perPlayer,
+        a.mode === "perPlayer" ? { perPlayer: a.count } : { total: a.count },
         history.map((m) => ({ player1Id: m.player1_id, player2Id: m.player2_id })),
       );
       ok(await db().rpc("add_match_day", { p_season: a.seasonId, p_date: a.date, p_matches: plan }));

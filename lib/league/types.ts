@@ -66,7 +66,7 @@ export interface Season {
   registrationOpen: boolean;
   registrationClosesAt: string | null;
   gamesPerMatch: number;
-  /** Registration is open and the deadline (if any) hasn't passed. */
+  /** Players can join now: not finished, registration open, deadline (if any) not passed. */
   acceptingPlayers: boolean;
   startedAt: string | null;
   finishedAt: string | null;
@@ -131,7 +131,7 @@ export type AdminAction =
   | { action: "createSeason"; name: string; closesAt: string | null; gamesPerMatch: number }
   | { action: "updateSeason"; seasonId: string; name?: string; registrationOpen?: boolean; closesAt?: string | null; gamesPerMatch?: number }
   | { action: "startSeason"; seasonId: string }
-  | { action: "addMatchDay"; seasonId: string; date: string; playerIds: string[]; perPlayer: number }
+  | { action: "addMatchDay"; seasonId: string; date: string; playerIds: string[]; mode: "perPlayer" | "total"; count: number }
   | { action: "removeMatchDay"; seasonId: string; day: number }
   | { action: "finishSeason"; seasonId: string }
   | { action: "deleteSeason"; seasonId: string }

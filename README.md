@@ -8,7 +8,7 @@ A simple round-robin table tennis league that runs entirely inside a Telegram Mi
 
 1. Open the bot and press **Start**, then **Open League**.
 2. Register once: name, major and year.
-3. Tap **Join season** while registration is open.
+3. Tap **Join season** while registration is open (also after the season has started, unless the organizer closed it).
 4. As the season goes on, see:
    - **Home**: your rank, wins, losses, win rate and your next matches.
    - **Matches**: your matches as simple "You vs Opponent" cards, or every match grouped by day.
@@ -19,9 +19,9 @@ A simple round-robin table tennis league that runs entirely inside a Telegram Mi
 - **Create a season** and choose how many games each match has: 3 (default), 5 or 7. Every game is played, so with 3 games a match ends 3–0, 2–1, 1–2 or 0–3. Registration opens straight away. The format can be changed until the first result is entered.
 - **Control registration.** Open or close it with a switch, and optionally set a date and time when it closes automatically.
 - **Manage who's in.** Add a registered player yourself (also after the season has started), or remove (kick) one. Removing a player from a running season deletes their matches in it.
-- **Start the season.** This closes registration.
-- **Add match days.** For each day, pick the date, tick who's here and set how many matches each player plays. The app pairs players with the opponents they've met least, and orders the matches so nobody plays twice in a row when it can be avoided. If the total is odd, one player gets one match fewer. Add as many days as you like; "Remove unplayed" clears a day's matches that weren't played.
-- **Enter results.** Tap the result, for example 2–1, then **Save**. Only scores that add up to the number of games are accepted. You can edit or clear a result at any time.
+- **Start the season.** Registration stays open, so latecomers can still join and are picked for the next match days. Close it with the switch whenever you want.
+- **Plan match days.** For each day, pick the date, tick who's here, and choose either matches per player or a total number of matches for the day. Pairing is fair over the whole season: whoever has played least goes first, and players who haven't met are paired first, so nobody meets the same opponent twice until all n×(n−1)/2 pairings have been played. Matches are ordered so nobody plays twice in a row when it can be avoided. Add as many days as you like; "Remove unplayed" clears a day's matches that weren't played.
+- **Enter results.** Results are shown one day at a time (pick the day, or search a player across all days). Tap the result, for example 2–1, then **Save**; saved results fold into a short list where you can edit them. Only scores that add up to the number of games are accepted. You can edit or clear a result at any time.
 - **Finish the season,** or delete it.
 - **Manage players.** Edit a player's name, major or year, or ban them. A banned player can't join seasons and is taken out of any season that hasn't started yet.
 
