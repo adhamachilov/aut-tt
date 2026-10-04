@@ -24,7 +24,7 @@ A simple round-robin table tennis league that runs entirely inside a Telegram Mi
 - **Finish the season,** or delete it.
 - **Manage players.** Edit a player's name, major or year, or ban them. A banned player can't join seasons and is taken out of any season that hasn't started yet.
 
-**Ranking (ITTF round-robin points):** a win is worth 2 points and a loss 1 point. Most points first. Ties are broken by the points from matches between the tied players, then games difference (+/-), then games won.
+**Ranking:** a win is worth 1 point, a loss 0. Most points first. Ties are broken by the points from matches between the tied players, then games difference (+/-), then games won.
 
 Only one season can be open or running at a time. Past seasons stay viewable from the season picker.
 

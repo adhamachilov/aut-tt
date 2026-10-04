@@ -1,5 +1,4 @@
-// ITTF round-robin scoring: a played match earns points even when lost.
-export const POINTS = { win: 2, loss: 1 } as const;
+export const POINTS = { win: 1, loss: 0 } as const;
 
 export const BEST_OF = [3, 5, 7] as const;
 export type BestOf = (typeof BEST_OF)[number];
@@ -20,4 +19,4 @@ export function scoreOptions(bestOf: number): [number, number][] {
   return [...losing.map((l): [number, number] => [need, l]), ...losing.reverse().map((l): [number, number] => [l, need])];
 }
 
-export const rulesText = (bestOf: number) => `Best of ${bestOf} games (first to ${gamesToWin(bestOf)}). Win ${POINTS.win} pts, loss ${POINTS.loss} pt.`;
+export const rulesText = (bestOf: number) => `Best of ${bestOf} games (first to ${gamesToWin(bestOf)}). Win = ${POINTS.win} point, loss = ${POINTS.loss}.`;

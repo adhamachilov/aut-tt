@@ -19,16 +19,15 @@ describe("computeStandings", () => {
   it("counts played, wins, losses, score and form", () => {
     const rows = computeStandings(players, [m("a", "b", 3, 1), m("c", "a", 3, 0), m("a", "d")]);
     const a = rows.find((r) => r.playerId === "a")!;
-    expect(a).toMatchObject({ played: 2, wins: 1, losses: 1, points: 3, scoreFor: 3, scoreAgainst: 4, form: ["L", "W"] });
+    expect(a).toMatchObject({ played: 2, wins: 1, losses: 1, points: 1, scoreFor: 3, scoreAgainst: 4, form: ["L", "W"] });
     expect(rows.find((r) => r.playerId === "d")).toMatchObject({ played: 0, wins: 0, losses: 0, points: 0 });
   });
 
-  it("gives 2 points for a win and 1 for a loss, so a played loss beats an unplayed match", () => {
-    // Alice 1W 1L = 3 pts; Bob 1W and one match still to play = 2 pts.
-    const rows = computeStandings(players, [m("a", "c", 3, 0), m("d", "a", 3, 1), m("b", "c", 3, 2), m("b", "d")]);
-    expect(rows.find((r) => r.playerId === "a")!.points).toBe(3);
-    expect(rows.find((r) => r.playerId === "b")!.points).toBe(2);
-    expect(rows.map((r) => r.playerId).indexOf("a")).toBeLessThan(rows.map((r) => r.playerId).indexOf("b"));
+  it("gives 1 point for a win and 0 for a loss", () => {
+    const rows = computeStandings(players, [m("a", "c", 3, 0), m("d", "a", 3, 1), m("a", "b", 3, 2)]);
+    expect(rows.find((r) => r.playerId === "a")!.points).toBe(2);
+    expect(rows.find((r) => r.playerId === "d")!.points).toBe(1);
+    expect(rows.find((r) => r.playerId === "b")!.points).toBe(0);
   });
 
   it("ranks by points first", () => {
