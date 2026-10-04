@@ -1,7 +1,9 @@
 import "server-only";
 import { createClient, type PostgrestError, type SupabaseClient } from "@supabase/supabase-js";
+import { after } from "next/server";
 import { z } from "zod";
 import { env } from "@/lib/env";
+import { notifyMatchDay } from "@/lib/telegram/notify";
 import { UserError } from "./http";
 import { planMatchDay } from "./matchday";
 import { GAMES_PER_MATCH, isValidScore, MAX_MATCHES_PER_DAY, MAX_MATCHES_PER_PLAYER } from "./rules";
@@ -242,6 +244,7 @@ const actionSchema = z.discriminatedUnion("action", [
     playerIds: z.array(id).min(2, "Pick at least 2 players who are here."),
     mode: z.enum(["perPlayer", "total"]),
     count: z.number().int().min(1, "Plan at least 1 match.").max(MAX_MATCHES_PER_DAY),
+    notify: z.boolean(),
   }),
   z.object({ action: z.literal("removeMatchDay"), seasonId: id, day: z.number().int().positive() }),
   z.object({ action: z.literal("finishSeason"), seasonId: id }),
@@ -305,7 +308,16 @@ export async function runAdminAction(input: unknown): Promise<void> {
         a.mode === "perPlayer" ? { perPlayer: a.count } : { total: a.count },
         history.map((m) => ({ player1Id: m.player1_id, player2Id: m.player2_id })),
       );
-      ok(await db().rpc("add_match_day", { p_season: a.seasonId, p_date: a.date, p_matches: plan }));
+      const day = ok(await db().rpc("add_match_day", { p_season: a.seasonId, p_date: a.date, p_matches: plan })) as number;
+      if (a.notify && env().TELEGRAM_BOT_TOKEN) {
+        const [season, people] = await Promise.all([
+          seasonRow(a.seasonId),
+          db().from("players").select("id, name, telegram_id").in("id", a.playerIds).returns<{ id: string; name: string; telegram_id: number }[]>().then(ok),
+        ]);
+        const who = new Map(people.map((p) => [p.id, { name: p.name, telegramId: p.telegram_id }]));
+        const matches = plan.map((m) => ({ round: m.round, player1: who.get(m.player1)!, player2: who.get(m.player2)! }));
+        after(() => notifyMatchDay(day, a.date, season.games_per_match, matches));
+      }
       return;
     }
 

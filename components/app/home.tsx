@@ -8,9 +8,12 @@ import { ProfileForm } from "./profile-form";
 import { rulesText } from "@/lib/league/rules";
 import { Avatar, byDayThenOrder, formatDateTime, MatchCard, played, Sheet } from "./ui";
 
+const PLAYER_PREVIEW = 10;
+
 export function HomeTab() {
   const { me, setMe, api, league, reload, run, confirm, goTo, openPlayer } = useLeague();
   const [editing, setEditing] = useState(false);
+  const [allPlayers, setAllPlayers] = useState(false);
   const [busy, setBusy] = useState(false);
   const player = me.player!;
   const { season, players, matches, standings } = league!;
@@ -80,9 +83,9 @@ export function HomeTab() {
           </div>
           {players.length > 0 && (
             <div className="border-t border-line px-5 py-4">
-              <p className="mb-3 text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-3">Players</p>
+              <p className="mb-3 text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-3">Players · {players.length}</p>
               <ul className="flex flex-wrap gap-2">
-                {players.map((p) => (
+                {[...players.filter((p) => p.id === player.id), ...players.filter((p) => p.id !== player.id)].slice(0, allPlayers ? undefined : PLAYER_PREVIEW).map((p) => (
                   <li key={p.id}>
                     <button type="button" onClick={() => openPlayer(p.id)} className="flex items-center gap-2 rounded-full bg-surface-2 py-1 pl-1 pr-3 text-[13px]">
                       <Avatar name={p.name} size={24} highlight={p.id === player.id} />
@@ -91,6 +94,11 @@ export function HomeTab() {
                   </li>
                 ))}
               </ul>
+              {players.length > PLAYER_PREVIEW && (
+                <button type="button" onClick={() => setAllPlayers(!allPlayers)} className="mt-3 text-[13px] font-medium text-ink-2 underline underline-offset-2">
+                  {allPlayers ? "Show less" : `Show all ${players.length}`}
+                </button>
+              )}
             </div>
           )}
         </Card>

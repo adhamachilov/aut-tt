@@ -364,8 +364,10 @@ function DayPlanner({ admin, nextDay, onDone }: { admin: AdminCtx; nextDay: numb
   const { season, players, matches } = league!;
   const [date, setDate] = useState(todayInput);
   const [absent, setAbsent] = useState<Set<string>>(new Set());
-  const [mode, setMode] = useState<"perPlayer" | "total">("perPlayer");
-  const [count, setCount] = useState(1);
+  const [mode, setMode] = useState<"perPlayer" | "total">("total");
+  const [count, setCount] = useState(3);
+  const [notify, setNotify] = useState(true);
+  const [showWho, setShowWho] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const here = players.filter((p) => !absent.has(p.id));
@@ -385,7 +387,8 @@ function DayPlanner({ admin, nextDay, onDone }: { admin: AdminCtx; nextDay: numb
   return (
     <div className="space-y-4">
       <p className="text-sm text-ink-2">
-        Whoever has played least goes first, and opponents who haven’t met yet are paired first. Pairings played so far:{" "}
+        The app picks the players: whoever has played least goes first (random among equals), and players who haven’t met yet are paired first. Pairings
+        played so far:{" "}
         <span className="num font-semibold text-ink">
           {metPairs} of {possible}
         </span>
@@ -395,10 +398,46 @@ function DayPlanner({ admin, nextDay, onDone }: { admin: AdminCtx; nextDay: numb
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={cn(inputClass, "h-10 text-[15px]")} />
       </Field>
       <div>
-        <span className="mb-1.5 block text-[13px] font-medium text-ink-2">
-          Who’s here · {n}/{players.length}
-        </span>
-        <ul className="flex flex-wrap gap-2">
+        <span className="mb-1.5 block text-[13px] font-medium text-ink-2">How many matches</span>
+        <Segmented
+          value={mode}
+          onChange={(m) => {
+            setMode(m);
+            setCount(m === "total" ? 3 : 1);
+          }}
+          options={[
+            { value: "total", label: "Total today" },
+            { value: "perPlayer", label: "Per player" },
+          ]}
+        />
+        <div className="mt-3 flex items-center gap-3">
+          <button type="button" aria-label="Fewer" disabled={count <= 1} onClick={() => setCount(count - 1)} className={buttonClass("secondary", "md", "w-11 px-0")}>
+            −
+          </button>
+          <span className="num w-10 text-center font-display text-[26px] font-semibold">{count}</span>
+          <button type="button" aria-label="More" disabled={count >= max} onClick={() => setCount(count + 1)} className={buttonClass("secondary", "md", "w-11 px-0")}>
+            +
+          </button>
+          <span className="text-sm text-ink-2">{mode === "perPlayer" ? (count === 1 ? "match each" : "matches each") : count === 1 ? "match today" : "matches today"}</span>
+        </div>
+        {n >= 2 && (
+          <p className="mt-1.5 text-[12px] text-ink-3">
+            {mode === "perPlayer"
+              ? `${total} matches today. Everyone here plays ${count}${(n * count) % 2 ? `, except one player who plays ${count - 1}` : ""}.`
+              : 2 * total >= n
+                ? `${total} matches today. Everyone here plays${2 * total > n ? ", some more than once" : ""}.`
+                : `${total} matches today: the app picks ${2 * total} of the ${n} players here. The others go first next time.`}
+          </p>
+        )}
+      </div>
+      <div>
+        <button type="button" onClick={() => setShowWho(!showWho)} aria-expanded={showWho} className="flex w-full items-center justify-between text-left">
+          <span className="text-[13px] font-medium text-ink-2">
+            Who can play today · {n}/{players.length}
+          </span>
+          <span className="text-[13px] font-medium text-ink-3">{showWho ? "Hide" : absent.size ? "Change" : "Everyone · change"}</span>
+        </button>
+        <ul hidden={!showWho} className="mt-2 flex flex-wrap gap-2">
           {players.map((p) => {
             const on = !absent.has(p.id);
             return (
@@ -417,47 +456,18 @@ function DayPlanner({ admin, nextDay, onDone }: { admin: AdminCtx; nextDay: numb
           })}
         </ul>
       </div>
-      <div>
-        <span className="mb-1.5 block text-[13px] font-medium text-ink-2">How many matches</span>
-        <Segmented
-          value={mode}
-          onChange={(m) => {
-            setMode(m);
-            setCount(1);
-          }}
-          options={[
-            { value: "perPlayer", label: "Per player" },
-            { value: "total", label: "Total today" },
-          ]}
-        />
-        <div className="mt-3 flex items-center gap-3">
-          <button type="button" aria-label="Fewer" disabled={count <= 1} onClick={() => setCount(count - 1)} className={buttonClass("secondary", "md", "w-11 px-0")}>
-            −
-          </button>
-          <span className="num w-10 text-center font-display text-[26px] font-semibold">{count}</span>
-          <button type="button" aria-label="More" disabled={count >= max} onClick={() => setCount(count + 1)} className={buttonClass("secondary", "md", "w-11 px-0")}>
-            +
-          </button>
-          <span className="text-sm text-ink-2">{mode === "perPlayer" ? (count === 1 ? "match each" : "matches each") : count === 1 ? "match today" : "matches today"}</span>
-        </div>
-        {n >= 2 && (
-          <p className="mt-1.5 text-[12px] text-ink-3">
-            {mode === "perPlayer"
-              ? `${total} matches today. Everyone plays ${count}${(n * count) % 2 ? `, except one player who plays ${count - 1}` : ""}.`
-              : 2 * total >= n
-                ? `${total} matches today. Everyone here plays${2 * total > n ? ", some more than once" : ""}.`
-                : `${total} matches today: ${2 * total} of the ${n} players here play. The others go first next time.`}
-          </p>
-        )}
-      </div>
+      <label className="flex items-center gap-3">
+        <input type="checkbox" checked={notify} onChange={(e) => setNotify(e.target.checked)} className="size-5" />
+        <span className="text-sm">Message the players on Telegram with their matches</span>
+      </label>
       <button
         type="button"
         disabled={busy || n < 2 || total < 1 || !date}
         onClick={async () => {
           setBusy(true);
           const ok = await act(
-            { action: "addMatchDay", seasonId: season!.id, date, playerIds: here.map((p) => p.id), mode, count },
-            `Day ${nextDay} added: ${total} matches.`,
+            { action: "addMatchDay", seasonId: season!.id, date, playerIds: here.map((p) => p.id), mode, count, notify },
+            `Day ${nextDay} added: ${total} matches.${notify ? " Players are being notified." : ""}`,
           );
           setBusy(false);
           if (ok) onDone();
