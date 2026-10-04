@@ -1,12 +1,14 @@
 import "server-only";
 import { createClient, type PostgrestError, type SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import { env, majorOptions } from "@/lib/env";
+import { env } from "@/lib/env";
 import { UserError } from "./http";
 import { planMatchDay } from "./matchday";
 import { GAMES_PER_MATCH, isValidScore, MAX_MATCHES_PER_PLAYER } from "./rules";
 import { computeStandings } from "./standings";
 import {
+  ALL_MAJORS,
+  degreeOfMajor,
   YEARS,
   type AdminAction,
   type AdminPlayer,
@@ -133,7 +135,10 @@ const toMatch = (m: MatchRow): Match => ({
 
 const text = (label: string) => z.string().trim().min(2, `${label} is too short.`).max(60, `${label} is too long.`);
 const yearSchema = z.enum(YEARS.map((y) => y.value) as [Year, ...Year[]], { error: "Choose your year." });
-const profileSchema = z.object({ name: text("Name"), major: text("Major"), year: yearSchema });
+const majorSchema = z.enum(ALL_MAJORS as [string, ...string[]], { error: "Choose your major from the list." });
+const sameDegree = (v: { major: string; year: Year }) => (degreeOfMajor(v.major) === "masters") === (v.year === "masters");
+const degreeMismatch = { error: "Master's programs go with Master's, bachelor's programs with years 1–4." };
+const profileSchema = z.object({ name: text("Name"), major: majorSchema, year: yearSchema }).refine(sameDegree, degreeMismatch);
 
 function parse<T>(schema: z.ZodType<T>, input: unknown): T {
   const r = schema.safeParse(input);
@@ -148,8 +153,6 @@ export async function getPlayerByTelegramId(telegramId: number): Promise<Profile
 
 export async function saveOwnProfile(viewer: Viewer, input: unknown): Promise<Profile> {
   const p = parse(profileSchema, input);
-  const majors = majorOptions();
-  if (majors.length && !majors.includes(p.major)) throw new UserError("Choose your major from the list.");
   const row = ok(
     await db()
       .from("players")
@@ -245,7 +248,9 @@ const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("addToSeason"), seasonId: id, playerId: id }),
   z.object({ action: z.literal("removeFromSeason"), seasonId: id, playerId: id }),
   z.object({ action: z.literal("setScore"), matchId: id, score1: score, score2: score }),
-  z.object({ action: z.literal("updatePlayer"), playerId: id, name: text("Name"), major: text("Major"), year: yearSchema }),
+  z
+    .object({ action: z.literal("updatePlayer"), playerId: id, name: text("Name"), major: majorSchema, year: yearSchema })
+    .refine(sameDegree, degreeMismatch),
   z.object({ action: z.literal("setBanned"), playerId: id, banned: z.boolean() }),
 ]) satisfies z.ZodType<AdminAction>;
 

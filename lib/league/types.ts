@@ -5,12 +5,36 @@ export const YEARS = [
   { value: "2", label: "2nd year" },
   { value: "3", label: "3rd year" },
   { value: "4", label: "4th year" },
-  { value: "5", label: "5th year" },
   { value: "masters", label: "Master's" },
-  { value: "phd", label: "PhD" },
 ] as const;
 
 export type Year = (typeof YEARS)[number]["value"];
+
+export const BACHELOR_YEARS = YEARS.filter((y) => y.value !== "masters");
+
+export const MAJORS = {
+  bachelors: [
+    "AI in Business",
+    "Business Administration",
+    "Business and Technology",
+    "Computer Science",
+    "Cybersecurity",
+    "Data Science",
+    "Finance and FinTech",
+    "Industrial Engineering",
+    "International Trade",
+    "International Relations & Diplomacy",
+    "Marketing & Communication",
+    "Software Engineering",
+    "Tourism",
+  ],
+  masters: ["AI and Business Transformation", "Global Management", "MBA", "TESOL"],
+} as const;
+
+export type Degree = keyof typeof MAJORS;
+export const ALL_MAJORS: readonly string[] = [...MAJORS.bachelors, ...MAJORS.masters];
+export const degreeOfMajor = (major: string): Degree | null =>
+  (MAJORS.bachelors as readonly string[]).includes(major) ? "bachelors" : (MAJORS.masters as readonly string[]).includes(major) ? "masters" : null;
 
 export const yearLabel = (y: string) => YEARS.find((o) => o.value === y)?.label ?? y;
 
@@ -32,7 +56,6 @@ export interface MeResponse {
   lastName: string | null;
   player: Profile | null;
   isAdmin: boolean;
-  majors: string[];
   dev: boolean;
 }
 

@@ -1,4 +1,4 @@
-import { env, majorOptions } from "@/lib/env";
+import { env } from "@/lib/env";
 import { authenticate, handle, json } from "@/lib/league/http";
 import { getPlayerByTelegramId, saveOwnProfile } from "@/lib/league/server";
 import type { MeResponse } from "@/lib/league/types";
@@ -15,7 +15,6 @@ export async function GET(request: Request) {
       lastName: viewer.lastName,
       player: await getPlayerByTelegramId(viewer.telegramId),
       isAdmin: viewer.isAdmin,
-      majors: majorOptions(),
       dev: viewer.dev,
     };
     return json(body);

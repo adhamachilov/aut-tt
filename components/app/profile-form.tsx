@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/cn";
-import { YEARS, type MeResponse, type Profile, type Year } from "@/lib/league/types";
+import { BACHELOR_YEARS, degreeOfMajor, MAJORS, type Degree, type MeResponse, type Profile, type Year } from "@/lib/league/types";
 import { buttonClass } from "@/components/ui/primitives";
 import type { Api } from "./telegram";
+import { Segmented } from "./ui";
 
 export const inputClass =
   "h-12 w-full rounded-xl bg-surface px-3.5 text-[16px] text-ink ring-1 ring-inset ring-line-strong placeholder:text-ink-3 focus:outline-none focus:ring-2 focus:ring-ink";
@@ -18,10 +19,10 @@ export function Field({ label, children }: { label: string; children: React.Reac
   );
 }
 
-export function YearPicker({ value, onChange }: { value: Year | ""; onChange: (y: Year) => void }) {
+function YearPicker({ value, onChange }: { value: Year | ""; onChange: (y: Year) => void }) {
   return (
     <div className="grid grid-cols-4 gap-2" role="radiogroup" aria-label="Year">
-      {YEARS.map((y) => (
+      {BACHELOR_YEARS.map((y) => (
         <button
           key={y.value}
           type="button"
@@ -40,22 +41,55 @@ export function YearPicker({ value, onChange }: { value: Year | ""; onChange: (y
   );
 }
 
-export function MajorInput({ value, onChange, majors }: { value: string; onChange: (v: string) => void; majors: string[] }) {
-  if (majors.length) {
-    return (
-      <select required value={value} onChange={(e) => onChange(e.target.value)} className={inputClass}>
-        <option value="" disabled>
-          Choose your major
-        </option>
-        {majors.map((m) => (
-          <option key={m} value={m}>
-            {m}
+export interface Study {
+  major: string;
+  year: Year | "";
+}
+
+/** Bachelor's or Master's, then a major from that list; bachelor's students also pick a year. */
+export function StudyFields({ value, onChange }: { value: Study; onChange: (v: Study) => void }) {
+  const [degree, setDegree] = useState<Degree>(degreeOfMajor(value.major) ?? (value.year === "masters" ? "masters" : "bachelors"));
+  const choose = (d: Degree) => {
+    setDegree(d);
+    onChange({
+      major: degreeOfMajor(value.major) === d ? value.major : "",
+      year: d === "masters" ? "masters" : value.year === "masters" ? "" : value.year,
+    });
+  };
+
+  return (
+    <>
+      <div>
+        <span className="mb-1.5 block text-[13px] font-medium text-ink-2">Degree</span>
+        <Segmented
+          value={degree}
+          onChange={choose}
+          options={[
+            { value: "bachelors", label: "Bachelor’s" },
+            { value: "masters", label: "Master’s" },
+          ]}
+        />
+      </div>
+      <Field label="Major">
+        <select required value={value.major} onChange={(e) => onChange({ ...value, major: e.target.value })} className={inputClass}>
+          <option value="" disabled>
+            Choose your major
           </option>
-        ))}
-      </select>
-    );
-  }
-  return <input required minLength={2} maxLength={60} value={value} onChange={(e) => onChange(e.target.value)} placeholder="e.g. Computer Science" className={inputClass} />;
+          {MAJORS[degree].map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </select>
+      </Field>
+      {degree === "bachelors" && (
+        <div>
+          <span className="mb-1.5 block text-[13px] font-medium text-ink-2">Year</span>
+          <YearPicker value={value.year} onChange={(year) => onChange({ ...value, year })} />
+        </div>
+      )}
+    </>
+  );
 }
 
 export function ProfileForm({
@@ -70,8 +104,10 @@ export function ProfileForm({
   onSaved: (player: Profile) => void;
 }) {
   const [name, setName] = useState(me.player?.name ?? [me.firstName, me.lastName].filter(Boolean).join(" "));
-  const [major, setMajor] = useState(me.player?.major ?? "");
-  const [year, setYear] = useState<Year | "">(me.player?.year ?? "");
+  const [study, setStudy] = useState<Study>({
+    major: degreeOfMajor(me.player?.major ?? "") ? me.player!.major : "",
+    year: me.player?.year ?? "",
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -80,11 +116,12 @@ export function ProfileForm({
       className="space-y-5"
       onSubmit={async (e) => {
         e.preventDefault();
-        if (!year) return setError("Choose your year.");
+        if (!study.major) return setError("Choose your major.");
+        if (!study.year) return setError("Choose your year.");
         setBusy(true);
         setError(null);
         try {
-          const { player } = await api.post<{ player: Profile }>("/api/me", { name, major, year });
+          const { player } = await api.post<{ player: Profile }>("/api/me", { name, ...study });
           onSaved(player);
         } catch (err) {
           setError(err instanceof Error ? err.message : "Couldn't save.");
@@ -96,13 +133,7 @@ export function ProfileForm({
       <Field label="Full name">
         <input required minLength={2} maxLength={60} value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" className={inputClass} />
       </Field>
-      <Field label="Major">
-        <MajorInput value={major} onChange={setMajor} majors={me.majors} />
-      </Field>
-      <div>
-        <span className="mb-1.5 block text-[13px] font-medium text-ink-2">Year</span>
-        <YearPicker value={year} onChange={setYear} />
-      </div>
+      <StudyFields value={study} onChange={setStudy} />
       {error && (
         <p role="alert" className="rounded-xl bg-danger-soft px-3.5 py-2.5 text-sm text-danger">
           {error}

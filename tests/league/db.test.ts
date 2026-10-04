@@ -19,7 +19,7 @@ let tg = 1000;
 
 async function player(name = "Player", banned = false): Promise<string> {
   const { rows } = await db.query<{ id: string }>(
-    "insert into public.players (telegram_id, name, major, year, banned) values ($1, $2, 'CS', '2', $3) returning id",
+    "insert into public.players (telegram_id, name, major, year, banned) values ($1, $2, 'Computer Science', '2', $3) returning id",
     [++tg, name, banned],
   );
   return rows[0].id;
@@ -83,6 +83,20 @@ describe("registration", () => {
   it("allows only one current season", async () => {
     await season();
     expect(await fails(season())).toMatch(/seasons_one_current/);
+  });
+});
+
+describe("players", () => {
+  const add = (major: string, year: string) =>
+    db.query("insert into public.players (telegram_id, name, major, year) values ($1, 'Test Player', $2, $3)", [++tg, major, year]);
+
+  it("only accepts majors from the program list, with a matching year", async () => {
+    await add("Computer Science", "1");
+    await add("MBA", "masters");
+    expect(await fails(add("CS", "2"))).toMatch(/check/);
+    expect(await fails(add("Computer Science", "5"))).toMatch(/check/);
+    expect(await fails(add("Computer Science", "masters"))).toMatch(/check/);
+    expect(await fails(add("MBA", "2"))).toMatch(/check/);
   });
 });
 

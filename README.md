@@ -49,7 +49,6 @@ npm run dev                       # http://localhost:3000
 | `APP_URL` | Public `https://` URL of the app. |
 | `TELEGRAM_WEBHOOK_SECRET` | Any random 16+ character string (`openssl rand -hex 32`). |
 | `LEAGUE_NAME` | Shown in the app and in the bot's messages. |
-| `MAJORS` | Optional comma-separated list. Makes "major" a dropdown. |
 | `ALLOW_DEV_TELEGRAM_LOGIN`, `DEV_TELEGRAM_USER_ID` | Development only: open the app in a normal browser as that Telegram user. Ignored in production. |
 
 ### Put it in Telegram

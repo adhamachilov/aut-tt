@@ -14,7 +14,6 @@ const schema = z.object({
     .string()
     .regex(/^\d+(\s*,\s*\d+)*$/, "must be comma-separated Telegram user IDs")
     .optional(),
-  MAJORS: z.string().optional(),
   DEV_TELEGRAM_USER_ID: z.coerce.number().int().positive().optional(),
   ALLOW_DEV_TELEGRAM_LOGIN: z.enum(["true", "false"]).optional(),
 });
@@ -58,10 +57,6 @@ export function env(): Env {
 
 export function adminTelegramIds(): Set<number> {
   return new Set((env().ADMIN_TELEGRAM_IDS ?? "").split(",").map((s) => Number(s.trim())).filter((n) => n > 0));
-}
-
-export function majorOptions(): string[] {
-  return (env().MAJORS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 }
 
 // Lets a normal browser act as this Telegram user while developing. Never in production.

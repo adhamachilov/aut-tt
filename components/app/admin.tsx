@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/cn";
 import { DEFAULT_GAMES_PER_MATCH, GAMES_PER_MATCH, MAX_MATCHES_PER_PLAYER, rulesText, scoreOptions } from "@/lib/league/rules";
-import { yearLabel, type AdminAction, type AdminPlayer, type LeaguePlayer, type Match, type Year } from "@/lib/league/types";
+import { yearLabel, type AdminAction, type AdminPlayer, type LeaguePlayer, type Match } from "@/lib/league/types";
 import { buttonClass, Card, EmptyState, Pill } from "@/components/ui/primitives";
 import { useLeague } from "./league-app";
-import { Field, inputClass, YearPicker } from "./profile-form";
+import { Field, inputClass, StudyFields, type Study } from "./profile-form";
 import { SeasonPicker } from "./standings";
 import { Avatar, byDayThenOrder, dayTitle, formatDateTime, fromLocalInput, played, Segmented, Sheet, todayInput, toLocalInput } from "./ui";
 
@@ -635,8 +635,7 @@ function PlayersAdmin({ admin }: { admin: AdminCtx }) {
 
 function PlayerEditor({ player, admin, onClose }: { player: AdminPlayer; admin: AdminCtx; onClose: () => void }) {
   const [name, setName] = useState(player.name);
-  const [major, setMajor] = useState(player.major);
-  const [year, setYear] = useState<Year>(player.year);
+  const [study, setStudy] = useState<Study>({ major: player.major, year: player.year });
   const [busy, setBusy] = useState(false);
 
   return (
@@ -656,8 +655,9 @@ function PlayerEditor({ player, admin, onClose }: { player: AdminPlayer; admin: 
         className="space-y-4"
         onSubmit={async (e) => {
           e.preventDefault();
+          if (!study.major || !study.year) return;
           setBusy(true);
-          const ok = await admin.act({ action: "updatePlayer", playerId: player.id, name, major, year }, "Player saved.");
+          const ok = await admin.act({ action: "updatePlayer", playerId: player.id, name, major: study.major, year: study.year }, "Player saved.");
           setBusy(false);
           if (ok) onClose();
         }}
@@ -665,14 +665,8 @@ function PlayerEditor({ player, admin, onClose }: { player: AdminPlayer; admin: 
         <Field label="Full name">
           <input required minLength={2} maxLength={60} value={name} onChange={(e) => setName(e.target.value)} className={inputClass} />
         </Field>
-        <Field label="Major">
-          <input required minLength={2} maxLength={60} value={major} onChange={(e) => setMajor(e.target.value)} className={inputClass} />
-        </Field>
-        <div>
-          <span className="mb-1.5 block text-[13px] font-medium text-ink-2">Year</span>
-          <YearPicker value={year} onChange={setYear} />
-        </div>
-        <button type="submit" disabled={busy} className={buttonClass("primary", "lg", "w-full")}>
+        <StudyFields value={study} onChange={setStudy} />
+        <button type="submit" disabled={busy || !study.major || !study.year} className={buttonClass("primary", "lg", "w-full")}>
           Save
         </button>
       </form>
