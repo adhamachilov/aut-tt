@@ -29,7 +29,14 @@ async function call(method: string, body: Record<string, unknown>) {
   console.log(`✓ ${method}`);
 }
 
-await call("setWebhook", { url: new URL("/api/telegram/webhook", appUrl).toString(), secret_token: secret, allowed_updates: ["message"] });
-await call("setChatMenuButton", { menu_button: { type: "web_app", text: "League", web_app: { url: appUrl } } });
-await call("setMyCommands", { commands: [{ command: "start", description: `Open ${league}` }] });
-console.log(`\nDone. Open your bot in Telegram and send /start.`);
+async function main() {
+  await call("setWebhook", { url: new URL("/api/telegram/webhook", appUrl).toString(), secret_token: secret, allowed_updates: ["message"] });
+  await call("setChatMenuButton", { menu_button: { type: "web_app", text: "League", web_app: { url: appUrl } } });
+  await call("setMyCommands", { commands: [{ command: "start", description: `Open ${league}` }] });
+  console.log(`\nDone. Open your bot in Telegram and send /start.`);
+}
+
+main().catch((e) => {
+  console.error(e instanceof Error ? e.message : e);
+  process.exit(1);
+});
