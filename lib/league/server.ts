@@ -3,8 +3,8 @@ import { createClient, type PostgrestError, type SupabaseClient } from "@supabas
 import { z } from "zod";
 import { env, majorOptions } from "@/lib/env";
 import { UserError } from "./http";
-import { BEST_OF, gamesToWin, isValidScore } from "./rules";
-import { roundRobin } from "./schedule";
+import { planMatchDay } from "./matchday";
+import { GAMES_PER_MATCH, isValidScore, MAX_MATCHES_PER_PLAYER } from "./rules";
 import { computeStandings } from "./standings";
 import {
   YEARS,
@@ -50,7 +50,7 @@ interface SeasonRow {
   status: SeasonStatus;
   registration_open: boolean;
   registration_closes_at: string | null;
-  best_of: number;
+  games_per_match: number;
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
@@ -59,6 +59,8 @@ interface SeasonRow {
 interface MatchRow {
   id: string;
   season_id: string;
+  day: number;
+  day_date: string | null;
   round: number;
   player1_id: string;
   player2_id: string;
@@ -74,7 +76,9 @@ const MESSAGES: Record<string, string> = {
   not_enough_players: "At least 2 players must join before the season can start.",
   season_not_found: "Season not found.",
   player_not_found: "Player not found. Register first.",
-  schedule_mismatch: "Couldn't build the schedule. Please try again.",
+  season_not_active: "Start the season before adding match days.",
+  season_finished: "This season is finished.",
+  empty_match_day: "There are no matches to add.",
 };
 
 function fail(error: PostgrestError): never {
@@ -106,7 +110,7 @@ const toSeason = (s: SeasonRow, now = new Date()): Season => ({
   status: s.status,
   registrationOpen: s.registration_open,
   registrationClosesAt: s.registration_closes_at,
-  bestOf: s.best_of,
+  gamesPerMatch: s.games_per_match,
   acceptingPlayers:
     s.status === "registration" && s.registration_open && (!s.registration_closes_at || new Date(s.registration_closes_at) > now),
   startedAt: s.started_at,
@@ -115,6 +119,8 @@ const toSeason = (s: SeasonRow, now = new Date()): Season => ({
 
 const toMatch = (m: MatchRow): Match => ({
   id: m.id,
+  day: m.day,
+  dayDate: m.day_date,
   round: m.round,
   player1Id: m.player1_id,
   player2Id: m.player2_id,
@@ -175,7 +181,7 @@ export async function loadLeague(requestedSeasonId: string | null, viewerTelegra
       .order("joined_at")
       .returns<{ player: LeaguePlayer }[]>()
       .then(ok),
-    db().from("matches").select("*").eq("season_id", chosen.id).order("round").returns<MatchRow[]>().then(ok),
+    db().from("matches").select("*").eq("season_id", chosen.id).order("day").order("round").returns<MatchRow[]>().then(ok),
   ]);
 
   const players = entries.map((e) => e.player);
@@ -213,19 +219,27 @@ export async function listPlayers(): Promise<AdminPlayer[]> {
 const id = z.uuid({ error: "Invalid id." });
 const closesAt = z.iso.datetime({ offset: true, error: "Invalid date." }).nullable();
 const score = z.number().int().min(0, "Scores can't be negative.").max(99).nullable();
-const bestOf = z.literal(BEST_OF, { error: "Choose best of 3, 5 or 7." });
+const gamesPerMatch = z.literal(GAMES_PER_MATCH, { error: "Choose 3, 5 or 7 games per match." });
 
 const actionSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("createSeason"), name: text("Season name"), closesAt, bestOf }),
+  z.object({ action: z.literal("createSeason"), name: text("Season name"), closesAt, gamesPerMatch }),
   z.object({
     action: z.literal("updateSeason"),
     seasonId: id,
     name: text("Season name").optional(),
     registrationOpen: z.boolean().optional(),
     closesAt: closesAt.optional(),
-    bestOf: bestOf.optional(),
+    gamesPerMatch: gamesPerMatch.optional(),
   }),
   z.object({ action: z.literal("startSeason"), seasonId: id }),
+  z.object({
+    action: z.literal("addMatchDay"),
+    seasonId: id,
+    date: z.iso.date({ error: "Choose a date." }),
+    playerIds: z.array(id).min(2, "Pick at least 2 players who are here."),
+    perPlayer: z.number().int().min(1).max(MAX_MATCHES_PER_PLAYER, `At most ${MAX_MATCHES_PER_PLAYER} matches per player.`),
+  }),
+  z.object({ action: z.literal("removeMatchDay"), seasonId: id, day: z.number().int().positive() }),
   z.object({ action: z.literal("finishSeason"), seasonId: id }),
   z.object({ action: z.literal("deleteSeason"), seasonId: id }),
   z.object({ action: z.literal("addToSeason"), seasonId: id, playerId: id }),
@@ -245,7 +259,7 @@ export async function runAdminAction(input: unknown): Promise<void> {
   const a = parse(actionSchema, input);
   switch (a.action) {
     case "createSeason":
-      ok(await db().from("seasons").insert({ name: a.name, registration_closes_at: a.closesAt, best_of: a.bestOf }));
+      ok(await db().from("seasons").insert({ name: a.name, registration_closes_at: a.closesAt, games_per_match: a.gamesPerMatch }));
       return;
 
     case "updateSeason": {
@@ -253,7 +267,7 @@ export async function runAdminAction(input: unknown): Promise<void> {
       if ((a.registrationOpen !== undefined || a.closesAt !== undefined) && s.status !== "registration") {
         throw new UserError("Registration can only be changed before the season starts.");
       }
-      if (a.bestOf !== undefined && a.bestOf !== s.best_of) {
+      if (a.gamesPerMatch !== undefined && a.gamesPerMatch !== s.games_per_match) {
         const anyPlayed = maybe(
           await db().from("matches").select("id").eq("season_id", a.seasonId).not("played_at", "is", null).limit(1).maybeSingle<{ id: string }>(),
         );
@@ -263,16 +277,36 @@ export async function runAdminAction(input: unknown): Promise<void> {
       if (a.name !== undefined) patch.name = a.name;
       if (a.registrationOpen !== undefined) patch.registration_open = a.registrationOpen;
       if (a.closesAt !== undefined) patch.registration_closes_at = a.closesAt;
-      if (a.bestOf !== undefined) patch.best_of = a.bestOf;
+      if (a.gamesPerMatch !== undefined) patch.games_per_match = a.gamesPerMatch;
       ok(await db().from("seasons").update(patch).eq("id", a.seasonId));
       return;
     }
 
-    case "startSeason": {
-      const entries = ok(await db().from("season_players").select("player_id").eq("season_id", a.seasonId).returns<{ player_id: string }[]>());
-      if (entries.length < 2) throw new UserError(MESSAGES.not_enough_players);
-      const schedule = roundRobin(entries.map((e) => e.player_id));
-      ok(await db().rpc("start_season", { p_season: a.seasonId, p_matches: schedule }));
+    case "startSeason":
+      ok(await db().rpc("start_season", { p_season: a.seasonId }));
+      return;
+
+    case "addMatchDay": {
+      const [entries, history] = await Promise.all([
+        db().from("season_players").select("player_id").eq("season_id", a.seasonId).returns<{ player_id: string }[]>().then(ok),
+        db().from("matches").select("player1_id, player2_id").eq("season_id", a.seasonId).returns<{ player1_id: string; player2_id: string }[]>().then(ok),
+      ]);
+      const inSeason = new Set(entries.map((e) => e.player_id));
+      if (a.playerIds.some((p) => !inSeason.has(p))) throw new UserError("Some of those players aren't in this season.");
+      const plan = planMatchDay(
+        a.playerIds,
+        a.perPlayer,
+        history.map((m) => ({ player1Id: m.player1_id, player2Id: m.player2_id })),
+      );
+      ok(await db().rpc("add_match_day", { p_season: a.seasonId, p_date: a.date, p_matches: plan }));
+      return;
+    }
+
+    case "removeMatchDay": {
+      const rows = ok(
+        await db().from("matches").delete().eq("season_id", a.seasonId).eq("day", a.day).is("played_at", null).select("id"),
+      );
+      if (!rows.length) throw new UserError("That day has no unplayed matches to remove.");
       return;
     }
 
@@ -307,12 +341,12 @@ export async function runAdminAction(input: unknown): Promise<void> {
       if (a.score1 !== null && a.score1 === a.score2) throw new UserError("Scores can't be equal: someone has to win.");
       if (a.score1 !== null && a.score2 !== null) {
         const m = maybe(
-          await db().from("matches").select("season:seasons(best_of)").eq("id", a.matchId).maybeSingle<{ season: { best_of: number } }>(),
+          await db().from("matches").select("season:seasons(games_per_match)").eq("id", a.matchId).maybeSingle<{ season: { games_per_match: number } }>(),
         );
         if (!m) throw new UserError("Match not found.");
-        const bo = m.season.best_of;
-        if (!isValidScore(bo, a.score1, a.score2)) {
-          throw new UserError(`Best of ${bo}: the winner needs exactly ${gamesToWin(bo)} games and the loser fewer (e.g. ${gamesToWin(bo)}–1).`);
+        const games = m.season.games_per_match;
+        if (!isValidScore(games, a.score1, a.score2)) {
+          throw new UserError(`Each match is ${games} games, so the two scores must add up to ${games} (e.g. ${games - 1}–1).`);
         }
       }
       const played = a.score1 !== null;

@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/cn";
-import { BEST_OF, DEFAULT_BEST_OF, rulesText, scoreOptions } from "@/lib/league/rules";
+import { DEFAULT_GAMES_PER_MATCH, GAMES_PER_MATCH, MAX_MATCHES_PER_PLAYER, rulesText, scoreOptions } from "@/lib/league/rules";
 import { yearLabel, type AdminAction, type AdminPlayer, type LeaguePlayer, type Match, type Year } from "@/lib/league/types";
 import { buttonClass, Card, EmptyState, Pill } from "@/components/ui/primitives";
 import { useLeague } from "./league-app";
 import { Field, inputClass, YearPicker } from "./profile-form";
 import { SeasonPicker } from "./standings";
-import { Avatar, formatDateTime, fromLocalInput, played, Segmented, Sheet, toLocalInput } from "./ui";
+import { Avatar, byDayThenOrder, dayTitle, formatDateTime, fromLocalInput, played, Segmented, Sheet, todayInput, toLocalInput } from "./ui";
 
 function useAdmin() {
   const ctx = useLeague();
@@ -84,14 +84,14 @@ function SeasonAdmin({ admin }: { admin: AdminCtx }) {
             {season.status === "registration" ? (
               <div className="mt-4">
                 <span className="mb-1.5 block text-[13px] font-medium text-ink-2">Match format</span>
-                <BestOfPicker
-                  value={season.bestOf}
-                  onChange={(n) => act({ action: "updateSeason", seasonId: season.id, bestOf: n }, `Matches are now best of ${n}.`)}
+                <GamesPicker
+                  value={season.gamesPerMatch}
+                  onChange={(n) => act({ action: "updateSeason", seasonId: season.id, gamesPerMatch: n }, `Matches are now ${n} games.`)}
                 />
-                <p className="mt-1.5 text-[12px] text-ink-3">{rulesText(season.bestOf)}</p>
+                <p className="mt-1.5 text-[12px] text-ink-3">{rulesText(season.gamesPerMatch)}</p>
               </div>
             ) : (
-              <p className="mt-1 text-[12px] text-ink-3">{rulesText(season.bestOf)}</p>
+              <p className="mt-1 text-[12px] text-ink-3">{rulesText(season.gamesPerMatch)}</p>
             )}
 
             {season.status === "registration" && <RegistrationControls admin={admin} />}
@@ -103,8 +103,8 @@ function SeasonAdmin({ admin }: { admin: AdminCtx }) {
                   disabled={players.length < 2}
                   onClick={async () => {
                     const n = players.length;
-                    if (await confirm(`Start "${season.name}" with ${n} players?\n\nRegistration closes and ${(n * (n - 1)) / 2} matches are created (everyone plays everyone once).`)) {
-                      await act({ action: "startSeason", seasonId: season.id }, "Season started. Matches are ready.");
+                    if (await confirm(`Start "${season.name}" with ${n} players?\n\nRegistration closes. Then you add match days: pick who's here and how many matches each plays.`)) {
+                      await act({ action: "startSeason", seasonId: season.id }, "Season started. Add the first match day.");
                     }
                   }}
                   className={buttonClass("primary", "md", "flex-1")}
@@ -140,6 +140,7 @@ function SeasonAdmin({ admin }: { admin: AdminCtx }) {
             {season.status === "registration" && players.length < 2 && <p className="mt-2 text-[12px] text-ink-3">At least 2 players are needed to start.</p>}
           </Card>
 
+          {season.status === "active" && <MatchDayPlanner admin={admin} />}
           {season.status !== "registration" && <ScoreEntry admin={admin} />}
           <Participants admin={admin} />
         </>
@@ -151,7 +152,7 @@ function SeasonAdmin({ admin }: { admin: AdminCtx }) {
 function CreateSeason({ admin }: { admin: AdminCtx }) {
   const [name, setName] = useState("");
   const [closes, setCloses] = useState("");
-  const [bestOf, setBestOf] = useState<number>(DEFAULT_BEST_OF);
+  const [games, setGames] = useState<number>(DEFAULT_GAMES_PER_MATCH);
   const [busy, setBusy] = useState(false);
   return (
     <Card className="p-4">
@@ -162,7 +163,7 @@ function CreateSeason({ admin }: { admin: AdminCtx }) {
         onSubmit={async (e) => {
           e.preventDefault();
           setBusy(true);
-          const ok = await admin.act({ action: "createSeason", name, closesAt: fromLocalInput(closes), bestOf }, "Season created. Registration is open.");
+          const ok = await admin.act({ action: "createSeason", name, closesAt: fromLocalInput(closes), gamesPerMatch: games }, "Season created. Registration is open.");
           setBusy(false);
           if (ok) {
             setName("");
@@ -174,9 +175,9 @@ function CreateSeason({ admin }: { admin: AdminCtx }) {
           <input required minLength={2} maxLength={80} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Autumn 2026" className={inputClass} />
         </Field>
         <div>
-          <span className="mb-1.5 block text-[13px] font-medium text-ink-2">Match format</span>
-          <BestOfPicker value={bestOf} onChange={setBestOf} />
-          <p className="mt-1.5 text-[12px] text-ink-3">{rulesText(bestOf)}</p>
+          <span className="mb-1.5 block text-[13px] font-medium text-ink-2">Games per match</span>
+          <GamesPicker value={games} onChange={setGames} />
+          <p className="mt-1.5 text-[12px] text-ink-3">{rulesText(games)}</p>
         </div>
         <Field label="Registration closes (optional)">
           <input type="datetime-local" value={closes} onChange={(e) => setCloses(e.target.value)} className={inputClass} />
@@ -189,12 +190,12 @@ function CreateSeason({ admin }: { admin: AdminCtx }) {
   );
 }
 
-function BestOfPicker({ value, onChange }: { value: number; onChange: (n: number) => void }) {
+function GamesPicker({ value, onChange }: { value: number; onChange: (n: number) => void }) {
   return (
     <Segmented
       value={String(value)}
       onChange={(v) => Number(v) !== value && onChange(Number(v))}
-      options={BEST_OF.map((n) => ({ value: String(n), label: `Best of ${n}` }))}
+      options={GAMES_PER_MATCH.map((n) => ({ value: String(n), label: `${n} games` }))}
     />
   );
 }
@@ -284,7 +285,7 @@ function Participants({ admin }: { admin: AdminCtx }) {
   return (
     <section>
       <h2 className="mb-2 text-[13px] font-semibold uppercase tracking-[0.08em] text-ink-3">Players in season · {players.length}</h2>
-      {season!.status === "registration" && addable.length > 0 && (
+      {season!.status !== "finished" && addable.length > 0 && (
         <div className="mb-3 flex gap-2">
           <select value={adding} onChange={(e) => setAdding(e.target.value)} className={cn(inputClass, "h-10 min-w-0 flex-1 text-[15px]")} aria-label="Add a registered player">
             <option value="">Add a registered player…</option>
@@ -332,6 +333,103 @@ function Participants({ admin }: { admin: AdminCtx }) {
   );
 }
 
+function MatchDayPlanner({ admin }: { admin: AdminCtx }) {
+  const { league, act } = admin;
+  const { season, players, matches } = league!;
+  const [date, setDate] = useState(todayInput);
+  const [absent, setAbsent] = useState<Set<string>>(new Set());
+  const [perPlayer, setPerPlayer] = useState(3);
+  const [busy, setBusy] = useState(false);
+
+  const here = players.filter((p) => !absent.has(p.id));
+  const n = here.length;
+  const total = Math.floor((n * perPlayer) / 2);
+  const nextDay = Math.max(0, ...matches.map((m) => m.day)) + 1;
+  const toggle = (id: string) =>
+    setAbsent((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  return (
+    <Card className="p-4">
+      <h2 className="text-[17px] font-semibold">Add Day {nextDay}</h2>
+      <p className="mt-1 text-sm text-ink-2">Pick who’s here and how many matches each plays. Opponents they’ve met least are chosen first.</p>
+      <div className="mt-4 space-y-4">
+        <Field label="Date">
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={cn(inputClass, "h-10 text-[15px]")} />
+        </Field>
+        <div>
+          <span className="mb-1.5 block text-[13px] font-medium text-ink-2">
+            Who’s here · {n}/{players.length}
+          </span>
+          <ul className="flex flex-wrap gap-2">
+            {players.map((p) => {
+              const on = !absent.has(p.id);
+              return (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => toggle(p.id)}
+                    className={cn("flex items-center gap-2 rounded-full py-1 pl-1 pr-3 text-[13px] ring-1 ring-inset", on ? "bg-ink text-bg ring-ink" : "bg-surface-2 text-ink-3 ring-line line-through")}
+                  >
+                    <Avatar name={p.name} size={24} />
+                    {p.name}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+        <div>
+          <span className="mb-1.5 block text-[13px] font-medium text-ink-2">Matches per player today</span>
+          <div className="flex items-center gap-3">
+            <button type="button" aria-label="Fewer" disabled={perPlayer <= 1} onClick={() => setPerPlayer(perPlayer - 1)} className={buttonClass("secondary", "md", "w-11 px-0")}>
+              −
+            </button>
+            <span className="num w-8 text-center font-display text-[26px] font-semibold">{perPlayer}</span>
+            <button
+              type="button"
+              aria-label="More"
+              disabled={perPlayer >= MAX_MATCHES_PER_PLAYER}
+              onClick={() => setPerPlayer(perPlayer + 1)}
+              className={buttonClass("secondary", "md", "w-11 px-0")}
+            >
+              +
+            </button>
+          </div>
+          {n >= 2 && (
+            <p className="mt-1.5 text-[12px] text-ink-3">
+              {total} matches today. Everyone plays {perPlayer}
+              {(n * perPlayer) % 2 ? `, except one player who plays ${perPlayer - 1} (odd number of spots)` : ""}.
+              {perPlayer > n - 1 ? " Some players will meet more than once today." : ""}
+            </p>
+          )}
+        </div>
+        <button
+          type="button"
+          disabled={busy || n < 2 || total < 1 || !date}
+          onClick={async () => {
+            setBusy(true);
+            const ok = await act(
+              { action: "addMatchDay", seasonId: season!.id, date, playerIds: here.map((p) => p.id), perPlayer },
+              `Day ${nextDay} added: ${total} matches.`,
+            );
+            setBusy(false);
+            if (ok) setAbsent(new Set());
+          }}
+          className={buttonClass("primary", "lg", "w-full")}
+        >
+          {busy ? "Creating…" : n < 2 ? "Pick at least 2 players" : `Create Day ${nextDay} · ${total} matches`}
+        </button>
+      </div>
+    </Card>
+  );
+}
+
 function ScoreEntry({ admin }: { admin: AdminCtx }) {
   const { players, matches, season } = admin.league!;
   const byId = useMemo(() => new Map(players.map((p) => [p.id, p])), [players]);
@@ -342,7 +440,15 @@ function ScoreEntry({ admin }: { admin: AdminCtx }) {
   const list = matches
     .filter((m) => filter === "all" || !played(m))
     .filter((m) => !q || [m.player1Id, m.player2Id].some((id) => byId.get(id)?.name.toLowerCase().includes(q)))
-    .sort((a, b) => a.round - b.round);
+    .sort(byDayThenOrder);
+  const days = [...new Set(list.map((m) => m.day))];
+
+  const removeDay = async (day: number) => {
+    const left = matches.filter((m) => m.day === day && !played(m)).length;
+    if (await admin.confirm(`Remove the ${left} unplayed matches of Day ${day}?\n\nResults already entered for that day are kept.`)) {
+      await admin.act({ action: "removeMatchDay", seasonId: season!.id, day }, `Day ${day}: unplayed matches removed.`);
+    }
+  };
 
   return (
     <section>
@@ -359,25 +465,46 @@ function ScoreEntry({ admin }: { admin: AdminCtx }) {
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find a player…" className={cn(inputClass, "h-10 text-[15px]")} />
       </div>
       {list.length === 0 ? (
-        <EmptyState title={filter === "todo" && !q ? "All matches are played 🎉" : "No matches found"} />
+        <EmptyState
+          title={!matches.length ? "No matches yet" : filter === "todo" && !q ? "All matches are played 🎉" : "No matches found"}
+          body={!matches.length || (filter === "todo" && !q) ? "Add a match day above to schedule more." : undefined}
+        />
       ) : (
-        <div className="space-y-2.5">
-          {list.map((m) => (
-            <ScoreRow key={`${m.id}:${m.score1}:${m.score2}`} match={m} byId={byId} bestOf={season!.bestOf} admin={admin} />
-          ))}
+        <div className="space-y-5">
+          {days.map((day) => {
+            const ofDay = list.filter((m) => m.day === day);
+            const canRemove = season!.status === "active" && matches.some((m) => m.day === day && !played(m));
+            return (
+              <div key={day}>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <h3 className="text-[15px] font-semibold">{dayTitle(day, ofDay[0].dayDate)}</h3>
+                  {canRemove && (
+                    <button type="button" onClick={() => removeDay(day)} className={buttonClass("ghost", "sm", "text-danger!")}>
+                      Remove unplayed
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-2.5">
+                  {ofDay.map((m) => (
+                    <ScoreRow key={`${m.id}:${m.score1}:${m.score2}`} match={m} byId={byId} games={season!.gamesPerMatch} admin={admin} />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </section>
   );
 }
 
-function ScoreRow({ match, byId, bestOf, admin }: { match: Match; byId: Map<string, LeaguePlayer>; bestOf: number; admin: AdminCtx }) {
+function ScoreRow({ match, byId, games, admin }: { match: Match; byId: Map<string, LeaguePlayer>; games: number; admin: AdminCtx }) {
   const saved: [number, number] | null = played(match) ? [match.score1!, match.score2!] : null;
   const [pick, setPick] = useState(saved);
   const [busy, setBusy] = useState(false);
   const changed = !!pick && (!saved || pick[0] !== saved[0] || pick[1] !== saved[1]);
   const lead = pick ? (pick[0] > pick[1] ? 1 : 2) : null;
-  const options = scoreOptions(bestOf);
+  const options = scoreOptions(games);
   const half = options.length / 2;
   const name = (id: string) => byId.get(id)?.name ?? "?";
   const first = (id: string) => name(id).split(" ")[0];
@@ -425,7 +552,7 @@ function ScoreRow({ match, byId, bestOf, admin }: { match: Match; byId: Map<stri
   return (
     <div className={cn("rounded-2xl bg-surface p-3.5 ring-1", saved ? "ring-line" : "ring-line-strong")}>
       <div className="mb-2 flex items-center justify-between text-[12px] text-ink-3">
-        <span>Round {match.round}</span>
+        <span>Match {match.round}</span>
         {saved && <span className="font-medium text-win">Saved</span>}
       </div>
       <div className="space-y-2">

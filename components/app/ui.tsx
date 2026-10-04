@@ -118,7 +118,7 @@ export function MatchCard({
   return (
     <div className={cn("rounded-2xl bg-surface px-3.5 py-3 ring-1", mine ? "ring-accent/40" : "ring-line")}>
       <div className="mb-2 flex items-center justify-between text-[12px] text-ink-3">
-        <span>{showRound ? `Round ${match.round}` : ""}</span>
+        <span>{showRound ? dayTitle(match.day, match.dayDate) : `Match ${match.round}`}</span>
         {mine && winner && (
           <span className={cn("rounded-full px-2 py-0.5 font-semibold", winner === meId ? "bg-win-soft text-win" : "bg-loss-soft text-loss")}>
             {winner === meId ? "Won" : "Lost"}
@@ -156,3 +156,18 @@ export function toLocalInput(iso: string | null): string {
 }
 
 export const fromLocalInput = (value: string): string | null => (value ? new Date(value).toISOString() : null);
+
+/** "2026-10-05" → "Sun, 5 Oct" (read as a local calendar date, not UTC). */
+export function formatDay(date: string): string {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+}
+
+export function todayInput(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+export const dayTitle = (day: number, date: string | null) => `Day ${day}${date ? ` · ${formatDay(date)}` : ""}`;
+
+export const byDayThenOrder = (a: Match, b: Match) => a.day - b.day || a.round - b.round;

@@ -42,7 +42,7 @@ export interface Season {
   status: SeasonStatus;
   registrationOpen: boolean;
   registrationClosesAt: string | null;
-  bestOf: number;
+  gamesPerMatch: number;
   /** Registration is open and the deadline (if any) hasn't passed. */
   acceptingPlayers: boolean;
   startedAt: string | null;
@@ -65,6 +65,10 @@ export interface LeaguePlayer {
 
 export interface Match {
   id: string;
+  day: number;
+  /** YYYY-MM-DD */
+  dayDate: string | null;
+  /** Order of play within the day. */
   round: number;
   player1Id: string;
   player2Id: string;
@@ -101,9 +105,11 @@ export interface AdminPlayer extends Profile {
 }
 
 export type AdminAction =
-  | { action: "createSeason"; name: string; closesAt: string | null; bestOf: number }
-  | { action: "updateSeason"; seasonId: string; name?: string; registrationOpen?: boolean; closesAt?: string | null; bestOf?: number }
+  | { action: "createSeason"; name: string; closesAt: string | null; gamesPerMatch: number }
+  | { action: "updateSeason"; seasonId: string; name?: string; registrationOpen?: boolean; closesAt?: string | null; gamesPerMatch?: number }
   | { action: "startSeason"; seasonId: string }
+  | { action: "addMatchDay"; seasonId: string; date: string; playerIds: string[]; perPlayer: number }
+  | { action: "removeMatchDay"; seasonId: string; day: number }
   | { action: "finishSeason"; seasonId: string }
   | { action: "deleteSeason"; seasonId: string }
   | { action: "addToSeason"; seasonId: string; playerId: string }

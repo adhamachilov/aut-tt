@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/ui/primitives";
 import type { Match } from "@/lib/league/types";
 import { useLeague } from "./league-app";
 import { SeasonPicker } from "./standings";
-import { MatchCard, played, Segmented } from "./ui";
+import { byDayThenOrder, dayTitle, MatchCard, played, Segmented } from "./ui";
 
 export function MatchesTab() {
   const { me, league, openPlayer } = useLeague();
@@ -16,13 +16,13 @@ export function MatchesTab() {
   const byId = useMemo(() => new Map(players.map((p) => [p.id, p])), [players]);
 
   const mine = matches.filter((m) => m.player1Id === meId || m.player2Id === meId);
-  const toPlay = mine.filter((m) => !played(m)).sort((a, b) => a.round - b.round);
+  const toPlay = mine.filter((m) => !played(m)).sort(byDayThenOrder);
   const done = mine.filter(played).sort((a, b) => (b.playedAt ?? "").localeCompare(a.playedAt ?? ""));
 
-  const rounds = useMemo(() => {
+  const days = useMemo(() => {
     const map = new Map<number, Match[]>();
-    for (const m of matches) map.set(m.round, [...(map.get(m.round) ?? []), m]);
-    return [...map.entries()].sort((a, b) => a[0] - b[0]);
+    for (const m of [...matches].sort(byDayThenOrder)) map.set(m.day, [...(map.get(m.day) ?? []), m]);
+    return [...map.entries()].sort((a, b) => b[0] - a[0]);
   }, [matches]);
 
   return (
@@ -33,7 +33,9 @@ export function MatchesTab() {
       </div>
 
       {!season || season.status === "registration" ? (
-        <EmptyState title="No matches yet" body="Every player plays every other player once. The schedule appears when the season starts." />
+        <EmptyState title="No matches yet" body="Matches are scheduled day by day once the season starts." />
+      ) : matches.length === 0 ? (
+        <EmptyState title="No matches yet" body="The organizer hasn’t scheduled the first match day yet." />
       ) : (
         <>
           <Segmented
@@ -66,8 +68,8 @@ export function MatchesTab() {
             )
           ) : (
             <div className="space-y-5">
-              {rounds.map(([round, list]) => (
-                <Group key={round} title={`Round ${round} · ${list.filter(played).length}/${list.length} played`}>
+              {days.map(([day, list]) => (
+                <Group key={day} title={`${dayTitle(day, list[0].dayDate)} · ${list.filter(played).length}/${list.length} played`}>
                   {list.map((m) => (
                     <MatchCard key={m.id} match={m} players={byId} meId={meId} onPlayer={openPlayer} showRound={false} />
                   ))}

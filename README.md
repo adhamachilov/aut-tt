@@ -9,18 +9,19 @@ A simple round-robin table tennis league that runs entirely inside a Telegram Mi
 1. Open the bot and press **Start**, then **Open League**.
 2. Register once: name, major and year.
 3. Tap **Join season** while registration is open.
-4. When the season starts, see:
+4. As the season goes on, see:
    - **Home**: your rank, wins, losses, win rate and your next matches.
-   - **Matches**: your matches as simple "You vs Opponent" cards, or every match grouped by round.
+   - **Matches**: your matches as simple "You vs Opponent" cards, or every match grouped by day.
    - **Table**: the standings (played, won, lost, games difference, points). Tap a player to see their results and who they beat or lost to.
 
 **Organizers** are the Telegram IDs listed in `ADMIN_TELEGRAM_IDS`. They see the same app as players, plus an **Admin** tab, so an organizer can also play. In the Admin tab you can:
 
-- **Create a season** and choose the match format: best of 3, 5 (default) or 7 games. Registration opens straight away. The format can be changed until the first result is entered.
+- **Create a season** and choose how many games each match has: 3 (default), 5 or 7. Every game is played, so with 3 games a match ends 3–0, 2–1, 1–2 or 0–3. Registration opens straight away. The format can be changed until the first result is entered.
 - **Control registration.** Open or close it with a switch, and optionally set a date and time when it closes automatically.
-- **Manage who's in.** Add a registered player yourself, or remove (kick) one. Removing a player from a running season deletes their matches in it.
-- **Start the season.** This closes registration and creates every match: each player plays everyone else once (N players → N×(N−1)/2 matches, grouped into rounds).
-- **Enter results.** Tap the result, for example 3–1, then **Save**. Only scores that fit the format are accepted (best of 5: the winner has exactly 3 games, the loser 0–2). You can edit or clear a result at any time.
+- **Manage who's in.** Add a registered player yourself (also after the season has started), or remove (kick) one. Removing a player from a running season deletes their matches in it.
+- **Start the season.** This closes registration.
+- **Add match days.** For each day, pick the date, tick who's here and set how many matches each player plays. The app pairs players with the opponents they've met least, and orders the matches so nobody plays twice in a row when it can be avoided. If the total is odd, one player gets one match fewer. Add as many days as you like; "Remove unplayed" clears a day's matches that weren't played.
+- **Enter results.** Tap the result, for example 2–1, then **Save**. Only scores that add up to the number of games are accepted. You can edit or clear a result at any time.
 - **Finish the season,** or delete it.
 - **Manage players.** Edit a player's name, major or year, or ban them. A banned player can't join seasons and is taken out of any season that hasn't started yet.
 
@@ -76,7 +77,7 @@ npm run lint
 
 The tests cover:
 
-- The schedule: everyone meets everyone exactly once, and nobody plays twice in a round.
+- Match days: everyone gets the requested number of matches, new opponents are preferred, and nobody plays twice in a row when avoidable.
 - Standings and tie-breaks.
 - Telegram identity checks.
-- The database rules, run against the real migration: registration open/closed and the deadline, bans, starting a season, score validation, removals, and anonymous access being denied.
+- The database rules, run against the real migration: registration open/closed and the deadline, bans, starting a season, adding match days, score validation, removals, and anonymous access being denied.

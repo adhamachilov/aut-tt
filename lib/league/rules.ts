@@ -1,22 +1,21 @@
 export const POINTS = { win: 1, loss: 0 } as const;
 
-export const BEST_OF = [3, 5, 7] as const;
-export type BestOf = (typeof BEST_OF)[number];
-export const DEFAULT_BEST_OF: BestOf = 5;
+// Every game of a match is played; an odd count means someone always wins.
+export const GAMES_PER_MATCH = [3, 5, 7] as const;
+export type GamesPerMatch = (typeof GAMES_PER_MATCH)[number];
+export const DEFAULT_GAMES_PER_MATCH: GamesPerMatch = 3;
 
-export const gamesToWin = (bestOf: number) => Math.ceil(bestOf / 2);
+export const MAX_MATCHES_PER_PLAYER = 10;
 
-/** Winner has exactly the games needed; loser has fewer. */
-export function isValidScore(bestOf: number, a: number, b: number): boolean {
-  const need = gamesToWin(bestOf);
-  return Number.isInteger(a) && Number.isInteger(b) && a >= 0 && b >= 0 && Math.max(a, b) === need && Math.min(a, b) < need;
+export function isValidScore(games: number, a: number, b: number): boolean {
+  return Number.isInteger(a) && Number.isInteger(b) && a >= 0 && b >= 0 && a + b === games && a !== b;
 }
 
-/** Every valid result from player 1's point of view, wins first: 3–0, 3–1, 3–2, 2–3, 1–3, 0–3. */
-export function scoreOptions(bestOf: number): [number, number][] {
-  const need = gamesToWin(bestOf);
-  const losing = Array.from({ length: need }, (_, i) => i);
-  return [...losing.map((l): [number, number] => [need, l]), ...losing.reverse().map((l): [number, number] => [l, need])];
+/** Every possible result from player 1's point of view, wins first: 3–0, 2–1, 1–2, 0–3. */
+export function scoreOptions(games: number): [number, number][] {
+  const wins: [number, number][] = [];
+  for (let a = games; a > games / 2; a--) wins.push([a, games - a]);
+  return [...wins, ...wins.map(([a, b]): [number, number] => [b, a]).reverse()];
 }
 
-export const rulesText = (bestOf: number) => `Best of ${bestOf} games (first to ${gamesToWin(bestOf)}). Win = ${POINTS.win} point, loss = ${POINTS.loss}.`;
+export const rulesText = (games: number) => `Each match is ${games} games, all played. Win = ${POINTS.win} point, loss = ${POINTS.loss}.`;

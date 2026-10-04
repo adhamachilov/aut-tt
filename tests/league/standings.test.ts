@@ -6,6 +6,8 @@ const players = ["Alice", "Bob", "Cara", "Dan"].map((name) => ({ id: name[0].toL
 let n = 0;
 const m = (p1: string, p2: string, s1: number | null = null, s2: number | null = null): Match => ({
   id: `m${++n}`,
+  day: 1,
+  dayDate: null,
   round: 1,
   player1Id: p1,
   player2Id: p2,

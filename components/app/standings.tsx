@@ -6,7 +6,7 @@ import { yearLabel } from "@/lib/league/types";
 import { EmptyState } from "@/components/ui/primitives";
 import { useLeague } from "./league-app";
 import { rulesText } from "@/lib/league/rules";
-import { Avatar, played, Sheet, winnerOf } from "./ui";
+import { Avatar, byDayThenOrder, played, Sheet, winnerOf } from "./ui";
 
 export function SeasonPicker() {
   const { league, setSeasonId } = useLeague();
@@ -90,7 +90,7 @@ export function TableTab() {
             </table>
           </div>
           <p className="text-[12px] text-ink-3">
-            {rulesText(season.bestOf)} Tied players are ranked by their matches against each other, then games difference (+/-). Tap a player to see their matches.
+            {rulesText(season.gamesPerMatch)} Tied players are ranked by their matches against each other, then games difference (+/-). Tap a player to see their matches.
           </p>
         </>
       )}
@@ -108,7 +108,7 @@ export function PlayerSheet({ playerId, onClose }: { playerId: string; onClose: 
 
   const theirs = matches
     .filter((m) => m.player1Id === playerId || m.player2Id === playerId)
-    .sort((a, b) => Number(played(b)) - Number(played(a)) || (b.playedAt ?? "").localeCompare(a.playedAt ?? "") || a.round - b.round);
+    .sort((a, b) => Number(played(b)) - Number(played(a)) || (b.playedAt ?? "").localeCompare(a.playedAt ?? "") || byDayThenOrder(a, b));
 
   return (
     <Sheet title={p.id === me.player!.id ? "You" : p.name} onClose={onClose}>
@@ -165,7 +165,7 @@ export function PlayerSheet({ playerId, onClose }: { playerId: string; onClose: 
                   <span className="text-ink-3">vs </span>
                   {oppId === me.player!.id ? "You" : (opp?.name ?? "Removed player")}
                 </span>
-                <span className="num shrink-0 text-[15px] font-semibold">{winner ? `${own}–${other}` : <span className="text-[13px] font-normal text-ink-3">Round {m.round}</span>}</span>
+                <span className="num shrink-0 text-[15px] font-semibold">{winner ? `${own}–${other}` : <span className="text-[13px] font-normal text-ink-3">Day {m.day}</span>}</span>
               </li>
             );
           })}
