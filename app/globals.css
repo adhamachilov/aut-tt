@@ -1,26 +1,190 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/*
+ * Design tokens. One accent (paddle red) used sparingly for "you" and primary
+ * actions; win/loss/status colours always travel with a text label.
+ */
+:root {
+  --bg: #f5f5f2;
+  --surface: #ffffff;
+  --surface-2: #efefeb;
+  --surface-3: #e6e6e1;
+  --ink: #111214;
+  --ink-2: #4d5057;
+  --ink-3: #868992;
+  --line: #e3e3de;
+  --line-strong: #cfcfc9;
+  --accent: #e0442b;
+  --accent-ink: #ffffff;
+  --accent-soft: #fdebe7;
+  --win: #15803d;
+  --win-soft: #e5f4ea;
+  --loss: #6b6e76;
+  --loss-soft: #ececea;
+  --live: #1d4ed8;
+  --live-soft: #e6ecfb;
+  --warn: #a16207;
+  --warn-soft: #fbf1dc;
+  --forfeit: #5b4fc4;
+  --forfeit-soft: #eeecfa;
+  --danger: #b42318;
+  --danger-soft: #fdecea;
+  --focus: #1d4ed8;
+  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  :root:not([data-theme="light"]) {
+    --bg: #0d0e10;
+    --surface: #15171a;
+    --surface-2: #1c1f23;
+    --surface-3: #252930;
+    --ink: #f2f2ef;
+    --ink-2: #b4b7be;
+    --ink-3: #7d818b;
+    --line: #25282d;
+    --line-strong: #353a41;
+    --accent: #ff5a3d;
+    --accent-ink: #1a0a06;
+    --accent-soft: #3a1a13;
+    --win: #4ade80;
+    --win-soft: #13291b;
+    --loss: #9a9ea7;
+    --loss-soft: #202328;
+    --live: #7aa2ff;
+    --live-soft: #16213d;
+    --warn: #f0b949;
+    --warn-soft: #2e2410;
+    --forfeit: #a79dff;
+    --forfeit-soft: #221f3d;
+    --danger: #ff7b6e;
+    --danger-soft: #3a1714;
+    --focus: #7aa2ff;
+    color-scheme: dark;
   }
 }
 
+[data-theme="dark"] {
+  --bg: #0d0e10;
+  --surface: #15171a;
+  --surface-2: #1c1f23;
+  --surface-3: #252930;
+  --ink: #f2f2ef;
+  --ink-2: #b4b7be;
+  --ink-3: #7d818b;
+  --line: #25282d;
+  --line-strong: #353a41;
+  --accent: #ff5a3d;
+  --accent-ink: #1a0a06;
+  --accent-soft: #3a1a13;
+  --win: #4ade80;
+  --win-soft: #13291b;
+  --loss: #9a9ea7;
+  --loss-soft: #202328;
+  --live: #7aa2ff;
+  --live-soft: #16213d;
+  --warn: #f0b949;
+  --warn-soft: #2e2410;
+  --forfeit: #a79dff;
+  --forfeit-soft: #221f3d;
+  --danger: #ff7b6e;
+  --danger-soft: #3a1714;
+  --focus: #7aa2ff;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-win: var(--win);
+  --color-win-soft: var(--win-soft);
+  --color-loss: var(--loss);
+  --color-loss-soft: var(--loss-soft);
+  --color-live: var(--live);
+  --color-live-soft: var(--live-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-forfeit: var(--forfeit);
+  --color-forfeit-soft: var(--forfeit-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-display-face), var(--font-inter), ui-sans-serif, sans-serif;
+  --animate-fade-up: fade-up 0.28s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  --animate-shimmer: shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes shimmer {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Numbers that line up in tables. */
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 0.45);
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
 }

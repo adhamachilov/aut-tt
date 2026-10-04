@@ -1,36 +1,82 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Table Tennis League
 
-## Getting Started
+A simple round-robin table tennis league that runs entirely inside a Telegram Mini App. Nobody signs up with an email or a password: every person is identified by their Telegram account.
 
-First, run the development server:
+## How it works
+
+**Players**
+
+1. Open the bot and press **Start**, then **Open League**.
+2. Register once: name, major and year.
+3. Tap **Join season** while registration is open.
+4. When the season starts, see:
+   - **Home**: your rank, wins, losses, win rate and your next matches.
+   - **Matches**: your matches as simple "You vs Opponent" cards, or every match grouped by round.
+   - **Table**: the standings (played, won, lost, games difference, points). Tap a player to see their results and who they beat or lost to.
+
+**Organizers** are the Telegram IDs listed in `ADMIN_TELEGRAM_IDS`. They see the same app as players, plus an **Admin** tab, so an organizer can also play. In the Admin tab you can:
+
+- **Create a season** and choose the match format: best of 3, 5 (default) or 7 games. Registration opens straight away. The format can be changed until the first result is entered.
+- **Control registration.** Open or close it with a switch, and optionally set a date and time when it closes automatically.
+- **Manage who's in.** Add a registered player yourself, or remove (kick) one. Removing a player from a running season deletes their matches in it.
+- **Start the season.** This closes registration and creates every match: each player plays everyone else once (N players → N×(N−1)/2 matches, grouped into rounds).
+- **Enter results.** Tap the result, for example 3–1, then **Save**. Only scores that fit the format are accepted (best of 5: the winner has exactly 3 games, the loser 0–2). You can edit or clear a result at any time.
+- **Finish the season,** or delete it.
+- **Manage players.** Edit a player's name, major or year, or ban them. A banned player can't join seasons and is taken out of any season that hasn't started yet.
+
+**Ranking (ITTF round-robin points):** a win is worth 2 points and a loss 1 point. Most points first. Ties are broken by the points from matches between the tied players, then games difference (+/-), then games won.
+
+Only one season can be open or running at a time. Past seasons stay viewable from the season picker.
+
+## Setup
+
+Requirements: Node 20.9+, a Supabase project and a Telegram bot from [@BotFather](https://t.me/BotFather).
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env.local        # fill it in (see below)
+npx supabase link --project-ref <your-project-ref>
+npx supabase db push              # creates the tables
+npm run dev                       # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+| Variable | Purpose |
+|---|---|
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Database. Server-only. |
+| `TELEGRAM_BOT_TOKEN` | Verifies who opened the app, and lets the bot reply to /start. |
+| `ADMIN_TELEGRAM_IDS` | Organizers' Telegram user IDs, comma-separated. Message [@userinfobot](https://t.me/userinfobot) to find yours. |
+| `APP_URL` | Public `https://` URL of the app. |
+| `TELEGRAM_WEBHOOK_SECRET` | Any random 16+ character string (`openssl rand -hex 32`). |
+| `LEAGUE_NAME` | Shown in the app and in the bot's messages. |
+| `MAJORS` | Optional comma-separated list. Makes "major" a dropdown. |
+| `ALLOW_DEV_TELEGRAM_LOGIN`, `DEV_TELEGRAM_USER_ID` | Development only: open the app in a normal browser as that Telegram user. Ignored in production. |
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Put it in Telegram
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Telegram only opens Mini Apps from a public `https://` URL. You can deploy (for example to Vercel), or expose your local server with a tunnel such as `npx cloudflared tunnel --url http://localhost:3000`. Then:
 
-## Learn More
+1. Set `APP_URL` to that URL.
+2. Run `npm run bot:setup`. It registers the webhook, so the bot answers /start with an **Open League** button, and sets the bot's menu button.
+3. Post the bot link (`https://t.me/<your_bot>`) in your group with the announcement.
 
-To learn more about Next.js, take a look at the following resources:
+## Security
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- The browser never receives a database key or the bot token.
+- Every API request carries Telegram's signed init data. The server checks the signature with the bot token, so a user can't pretend to be someone else or claim admin rights.
+- Admin actions are allowed only for Telegram IDs in `ADMIN_TELEGRAM_IDS`.
+- The database denies all access to the public (anon) role.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Tests
 
-## Deploy on Vercel
+```bash
+npm test
+npm run typecheck
+npm run lint
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+The tests cover:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- The schedule: everyone meets everyone exactly once, and nobody plays twice in a round.
+- Standings and tie-breaks.
+- Telegram identity checks.
+- The database rules, run against the real migration: registration open/closed and the deadline, bans, starting a season, score validation, removals, and anonymous access being denied.
