@@ -13,39 +13,46 @@ const m = (p1: string, p2: string, s1: number | null = null, s2: number | null =
   player2Id: p2,
   score1: s1,
   score2: s2,
+  games: null,
   playedAt: s1 === null ? null : new Date(2026, 0, 1, 0, n).toISOString(),
 });
 const order = (matches: Match[]) => computeStandings(players, matches).map((r) => r.playerId);
 
 describe("computeStandings", () => {
   it("counts played, wins, losses, score and form", () => {
-    const rows = computeStandings(players, [m("a", "b", 3, 1), m("c", "a", 3, 0), m("a", "d")]);
+    const rows = computeStandings(players, [m("a", "b", 2, 1), m("c", "a", 3, 0), m("a", "d")]);
     const a = rows.find((r) => r.playerId === "a")!;
-    expect(a).toMatchObject({ played: 2, wins: 1, losses: 1, points: 1, scoreFor: 3, scoreAgainst: 4, form: ["L", "W"] });
+    expect(a).toMatchObject({ played: 2, wins: 1, losses: 1, points: 2, scoreFor: 2, scoreAgainst: 4, form: ["L", "W"] });
     expect(rows.find((r) => r.playerId === "d")).toMatchObject({ played: 0, wins: 0, losses: 0, points: 0 });
   });
 
-  it("gives 1 point for a win and 0 for a loss", () => {
-    const rows = computeStandings(players, [m("a", "c", 3, 0), m("d", "a", 3, 1), m("a", "b", 3, 2)]);
-    expect(rows.find((r) => r.playerId === "a")!.points).toBe(2);
-    expect(rows.find((r) => r.playerId === "d")!.points).toBe(1);
-    expect(rows.find((r) => r.playerId === "b")!.points).toBe(0);
+  it("gives one point per game won: 3–0 is 3 points, 2–1 is 2 and 1", () => {
+    const rows = computeStandings(players, [m("a", "b", 3, 0), m("c", "d", 2, 1)]);
+    const pts = (id: string) => rows.find((r) => r.playerId === id)!.points;
+    expect([pts("a"), pts("b"), pts("c"), pts("d")]).toEqual([3, 0, 2, 1]);
+    expect(rows.map((r) => r.playerId)).toEqual(["a", "c", "d", "b"]);
   });
 
-  it("ranks by points first", () => {
-    expect(order([m("b", "a", 3, 0), m("b", "c", 3, 0), m("c", "d", 3, 2)])[0]).toBe("b");
+  it("adds points up over all matches", () => {
+    const rows = computeStandings(players, [m("a", "b", 2, 1), m("a", "c", 1, 2), m("a", "d", 3, 0)]);
+    expect(rows.find((r) => r.playerId === "a")!.points).toBe(6);
   });
 
-  it("breaks a two-way tie by the match between them, even against score difference", () => {
-    // Alice and Bob both have 1 win; Bob has the better difference, but Alice beat Bob.
-    const rows = order([m("a", "b", 3, 2), m("b", "c", 3, 0), m("c", "a", 3, 0), m("d", "c", 0, 3)]);
-    expect(rows.indexOf("a")).toBeLessThan(rows.indexOf("b"));
+  it("breaks a tie on points by the match between the tied players", () => {
+    // Alice and Bob both end on 3 points with 1 win each; Bob beat Alice 2–1, so Bob is above
+    // her even though "Alice" sorts first by name.
+    const rows = computeStandings(players, [m("b", "a", 2, 1), m("a", "c", 2, 1), m("b", "d", 1, 2)]);
+    expect(rows.find((r) => r.playerId === "a")!.points).toBe(3);
+    expect(rows.find((r) => r.playerId === "b")!.points).toBe(3);
+    const ids = rows.map((r) => r.playerId);
+    expect(ids.indexOf("b")).toBeLessThan(ids.indexOf("a"));
   });
 
-  it("falls back to score difference when head-to-head can't separate (three-way cycle)", () => {
-    // Everyone has 1 win and 1 head-to-head win. Differences: Alice +2, Bob 0, Cara -2.
-    const rows = order([m("a", "b", 3, 0), m("b", "c", 3, 0), m("c", "a", 3, 2)]);
-    expect(rows.slice(0, 3)).toEqual(["a", "b", "c"]);
+  it("then by matches won, then games difference", () => {
+    // Alice and Dan both have 3 points and never met. Alice won 1 of 2 matches (2–1, 1–2),
+    // Dan won 1 of 1 (3–0): equal wins, Dan's difference is better.
+    const rows = order([m("a", "b", 2, 1), m("c", "a", 2, 1), m("d", "b", 3, 0)]);
+    expect(rows.indexOf("d")).toBeLessThan(rows.indexOf("a"));
   });
 
   it("is stable by name when everything is equal", () => {

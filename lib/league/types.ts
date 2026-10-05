@@ -97,6 +97,8 @@ export interface Match {
   player2Id: string;
   score1: number | null;
   score2: number | null;
+  /** Points in each game, player 1 first, e.g. [[11, 9], [7, 11], [11, 4]]. Optional. */
+  games: [number, number][] | null;
   playedAt: string | null;
 }
 
@@ -137,6 +139,6 @@ export type AdminAction =
   | { action: "deleteSeason"; seasonId: string }
   | { action: "addToSeason"; seasonId: string; playerId: string }
   | { action: "removeFromSeason"; seasonId: string; playerId: string }
-  | { action: "setScore"; matchId: string; score1: number | null; score2: number | null }
+  | { action: "setScore"; matchId: string; score1: number | null; score2: number | null; games?: [number, number][] | null }
   | { action: "updatePlayer"; playerId: string; name: string; major: string; year: Year }
   | { action: "setBanned"; playerId: string; banned: boolean };

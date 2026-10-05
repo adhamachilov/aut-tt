@@ -141,9 +141,13 @@ export function MatchCard({
         </div>
         {side(right, "right")}
       </div>
+      {winner && match.games && <p className="num mt-2 text-center text-[12px] text-ink-3">{gamesText(match.games, flip)}</p>}
     </div>
   );
 }
+
+/** "11–9 · 7–11 · 11–4", from player 1's side unless flipped. */
+export const gamesText = (games: [number, number][], flip = false) => games.map(([a, b]) => (flip ? `${b}–${a}` : `${a}–${b}`)).join(" · ");
 
 export const formatDateTime = (iso: string) => new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 

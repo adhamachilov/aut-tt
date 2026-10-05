@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isValidScore, scoreOptions } from "@/lib/league/rules";
+import { isValidScore, scoreFromGames, scoreOptions } from "@/lib/league/rules";
 
 describe("match format (every game is played)", () => {
   it("accepts only scores that add up to the number of games", () => {
@@ -17,5 +17,17 @@ describe("match format (every game is played)", () => {
     expect(scoreOptions(3)).toEqual([[3, 0], [2, 1], [1, 2], [0, 3]]);
     expect(scoreOptions(5)).toEqual([[5, 0], [4, 1], [3, 2], [2, 3], [1, 4], [0, 5]]);
     expect(scoreOptions(7).every(([a, b]) => isValidScore(7, a, b))).toBe(true);
+  });
+});
+
+describe("scoreFromGames", () => {
+  it("counts the games each player won", () => {
+    expect(scoreFromGames([[11, 0], [11, 0], [11, 0]])).toEqual([3, 0]);
+    expect(scoreFromGames([[11, 9], [7, 11], [12, 10]])).toEqual([2, 1]);
+    expect(scoreFromGames([[0, 11], [0, 11], [0, 11]])).toEqual([0, 3]);
+  });
+
+  it("rejects a drawn game", () => {
+    expect(scoreFromGames([[11, 9], [10, 10], [11, 4]])).toBeNull();
   });
 });

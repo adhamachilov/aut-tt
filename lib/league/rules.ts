@@ -1,5 +1,3 @@
-export const POINTS = { win: 1, loss: 0 } as const;
-
 // Every game of a match is played; an odd count means someone always wins.
 export const GAMES_PER_MATCH = [3, 5, 7] as const;
 export type GamesPerMatch = (typeof GAMES_PER_MATCH)[number];
@@ -19,4 +17,11 @@ export function scoreOptions(games: number): [number, number][] {
   return [...wins, ...wins.map(([a, b]): [number, number] => [b, a]).reverse()];
 }
 
-export const rulesText = (games: number) => `Each match is ${games} games, all played. Win = ${POINTS.win} point, loss = ${POINTS.loss}.`;
+export const rulesText = (games: number) => `Each match is ${games} games, all played. Every game won = 1 point.`;
+
+/** Games won by each player, from the points of every game; null if a game is a draw. */
+export function scoreFromGames(games: readonly (readonly [number, number])[]): [number, number] | null {
+  if (games.some(([a, b]) => a === b)) return null;
+  const won1 = games.filter(([a, b]) => a > b).length;
+  return [won1, games.length - won1];
+}

@@ -8,7 +8,7 @@ import { buttonClass, Card, EmptyState, Pill } from "@/components/ui/primitives"
 import { useLeague } from "./league-app";
 import { Field, inputClass, StudyFields, type Study } from "./profile-form";
 import { SeasonPicker } from "./standings";
-import { Avatar, byDayThenOrder, dayTitle, formatDateTime, fromLocalInput, played, Segmented, Sheet, todayInput, toLocalInput } from "./ui";
+import { Avatar, byDayThenOrder, dayTitle, gamesText, formatDateTime, fromLocalInput, played, Segmented, Sheet, todayInput, toLocalInput } from "./ui";
 
 function useAdmin() {
   const ctx = useLeague();
@@ -572,6 +572,7 @@ function Results({ admin }: { admin: AdminCtx }) {
                         {m.score1}–{m.score2}
                       </span>
                       <span className={m.score2! > m.score1! ? "font-semibold" : "text-ink-2"}>{name(m.player2Id)}</span>
+                      {m.games && <span className="block text-[12px] text-ink-3">{gamesText(m.games)}</span>}
                     </span>
                     <span className="shrink-0 text-[13px] font-medium text-ink-3">Edit</span>
                   </button>
@@ -601,10 +602,23 @@ function ScoreRow({
   onFinished?: () => void;
 }) {
   const saved: [number, number] | null = played(match) ? [match.score1!, match.score2!] : null;
-  const [pick, setPick] = useState(saved);
+  const [quickPick, setPick] = useState(saved);
   const [busy, setBusy] = useState(false);
-  const changed = !!pick && (!saved || pick[0] !== saved[0] || pick[1] !== saved[1]);
+  const [detail, setDetail] = useState(!!match.games);
+  const [points, setPoints] = useState<string[][]>(() =>
+    Array.from({ length: games }, (_, i) => (match.games?.[i] ? match.games[i].map(String) : ["", ""])),
+  );
+  const parsed = points.map(([x, y]) => [x === "" ? NaN : Number(x), y === "" ? NaN : Number(y)] as [number, number]);
+  const gameDone = ([x, y]: [number, number]) => Number.isInteger(x) && Number.isInteger(y) && x !== y;
+  const complete = parsed.every(gameDone);
+  const gamesWon = (side: 0 | 1) => parsed.filter((g) => gameDone(g) && g[side] > g[1 - side]).length;
+  const pick: [number, number] | null = detail ? (complete ? [gamesWon(0), gamesWon(1)] : null) : quickPick;
+  const savedGames = JSON.stringify(match.games ?? null);
+  const nowGames = detail && complete ? JSON.stringify(parsed) : "null";
+  const changed = !!pick && (!saved || pick[0] !== saved[0] || pick[1] !== saved[1] || nowGames !== savedGames);
   const lead = pick ? (pick[0] > pick[1] ? 1 : 2) : null;
+  const setPoint = (game: number, side: 0 | 1, value: string) =>
+    setPoints((prev) => prev.map((g, i) => (i === game ? g.map((v, j) => (j === side ? value.replace(/\D/g, "").slice(0, 2) : v)) : g)));
   const options = scoreOptions(games);
   const half = options.length / 2;
   const name = (id: string) => byId.get(id)?.name ?? "?";
@@ -612,9 +626,16 @@ function ScoreRow({
 
   const save = async (score: [number, number] | null) => {
     setBusy(true);
-    const ok = await admin.act({ action: "setScore", matchId: match.id, score1: score?.[0] ?? null, score2: score?.[1] ?? null }, score ? "Result saved." : "Result cleared.");
+    const ok = await admin.act(
+      { action: "setScore", matchId: match.id, score1: score?.[0] ?? null, score2: score?.[1] ?? null, games: score && detail && complete ? parsed : null },
+      score ? "Result saved." : "Result cleared.",
+    );
     setBusy(false);
-    if (ok && !score) setPick(null);
+    if (ok && !score) {
+      setPick(null);
+      setPoints(Array.from({ length: games }, () => ["", ""]));
+      setDetail(false);
+    }
     if (ok) onFinished?.();
   };
 
@@ -661,10 +682,56 @@ function ScoreRow({
         {line(match.player1Id, 1)}
         {line(match.player2Id, 2)}
       </div>
-      <div className="mt-3 space-y-2">
-        {choices(`${first(match.player1Id)} won`, options.slice(0, half))}
-        {choices(`${first(match.player2Id)} won`, options.slice(half))}
-      </div>
+      {detail ? (
+        <div className="mt-3 rounded-xl bg-surface-2 p-2.5">
+          <div className="mb-1.5 grid grid-cols-[1fr_3.5rem_auto_3.5rem] items-center gap-2 text-[12px] text-ink-3">
+            <span>Points per game</span>
+            <span className="truncate text-center">{first(match.player1Id)}</span>
+            <span />
+            <span className="truncate text-center">{first(match.player2Id)}</span>
+          </div>
+          <div className="space-y-1.5">
+            {parsed.map((g, i) => (
+              <div key={i} className="grid grid-cols-[1fr_3.5rem_auto_3.5rem] items-center gap-2">
+                <span className="text-[13px] text-ink-2">Game {i + 1}</span>
+                {([0, 1] as const).map((side) => (
+                  <input
+                    key={side}
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={2}
+                    value={points[i][side]}
+                    onChange={(e) => setPoint(i, side, e.target.value)}
+                    aria-label={`Game ${i + 1}, ${name(side === 0 ? match.player1Id : match.player2Id)} points`}
+                    style={{ order: side === 0 ? 1 : 3 }}
+                    className={cn(
+                      "num h-10 w-14 rounded-lg bg-surface text-center text-[17px] font-semibold ring-1 ring-inset ring-line-strong focus:outline-none focus:ring-2 focus:ring-ink",
+                      gameDone(g) && g[side] > g[1 - side] && "text-win",
+                    )}
+                  />
+                ))}
+                <span className="text-ink-3" style={{ order: 2 }}>
+                  :
+                </span>
+              </div>
+            ))}
+          </div>
+          {parsed.some(([x, y]) => Number.isInteger(x) && x === y) && <p className="mt-1.5 text-[12px] text-danger">A game can’t end in a draw.</p>}
+          <button type="button" onClick={() => setDetail(false)} className="mt-2 text-[12px] font-medium text-ink-3 underline underline-offset-2">
+            Use a quick result instead
+          </button>
+        </div>
+      ) : (
+        <div className="mt-3 space-y-2">
+          {choices(`${first(match.player1Id)} won`, options.slice(0, half))}
+          {choices(`${first(match.player2Id)} won`, options.slice(half))}
+          <button type="button" onClick={() => setDetail(true)} className="text-[12px] font-medium text-ink-2 underline underline-offset-2">
+            + Add game scores (e.g. 11–9)
+          </button>
+        </div>
+      )}
+      {detail && !complete && <p className="mt-2 text-[12px] text-ink-3">Fill in the points for all {games} games to save.</p>}
       {(changed || saved) && (
         <div className="mt-3 flex gap-2">
           {changed && (
@@ -672,7 +739,16 @@ function ScoreRow({
               <button type="button" disabled={busy} onClick={() => save(pick)} className={buttonClass("primary", "md", "flex-1")}>
                 {busy ? "Saving…" : "Save result"}
               </button>
-              <button type="button" disabled={busy} onClick={() => setPick(saved)} className={buttonClass("ghost", "md")}>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setPick(saved);
+                  setDetail(!!match.games);
+                  setPoints(Array.from({ length: games }, (_, i) => (match.games?.[i] ? match.games[i].map(String) : ["", ""])));
+                }}
+                className={buttonClass("ghost", "md")}
+              >
                 Undo
               </button>
             </>

@@ -6,7 +6,7 @@ import { env } from "@/lib/env";
 import { notifyMatchDay } from "@/lib/telegram/notify";
 import { UserError } from "./http";
 import { planMatchDay } from "./matchday";
-import { GAMES_PER_MATCH, isValidScore, MAX_MATCHES_PER_DAY, MAX_MATCHES_PER_PLAYER } from "./rules";
+import { GAMES_PER_MATCH, isValidScore, scoreFromGames, MAX_MATCHES_PER_DAY, MAX_MATCHES_PER_PLAYER } from "./rules";
 import { computeStandings } from "./standings";
 import {
   ALL_MAJORS,
@@ -70,6 +70,7 @@ interface MatchRow {
   player2_id: string;
   score1: number | null;
   score2: number | null;
+  game_scores: [number, number][] | null;
   played_at: string | null;
 }
 
@@ -130,6 +131,7 @@ const toMatch = (m: MatchRow): Match => ({
   player2Id: m.player2_id,
   score1: m.score1,
   score2: m.score2,
+  games: m.game_scores,
   playedAt: m.played_at,
 });
 
@@ -224,6 +226,7 @@ export async function listPlayers(): Promise<AdminPlayer[]> {
 const id = z.uuid({ error: "Invalid id." });
 const closesAt = z.iso.datetime({ offset: true, error: "Invalid date." }).nullable();
 const score = z.number().int().min(0, "Scores can't be negative.").max(99).nullable();
+const gamePoints = z.number().int().min(0, "Points can't be negative.").max(99, "That's too many points for one game.");
 const gamesPerMatch = z.literal(GAMES_PER_MATCH, { error: "Choose 3, 5 or 7 games per match." });
 
 const actionSchema = z.discriminatedUnion("action", [
@@ -251,7 +254,13 @@ const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("deleteSeason"), seasonId: id }),
   z.object({ action: z.literal("addToSeason"), seasonId: id, playerId: id }),
   z.object({ action: z.literal("removeFromSeason"), seasonId: id, playerId: id }),
-  z.object({ action: z.literal("setScore"), matchId: id, score1: score, score2: score }),
+  z.object({
+    action: z.literal("setScore"),
+    matchId: id,
+    score1: score,
+    score2: score,
+    games: z.array(z.tuple([gamePoints, gamePoints])).nullable().optional(),
+  }),
   z
     .object({ action: z.literal("updatePlayer"), playerId: id, name: text("Name"), major: majorSchema, year: yearSchema })
     .refine(sameDegree, degreeMismatch),
@@ -356,23 +365,31 @@ export async function runAdminAction(input: unknown): Promise<void> {
       return;
 
     case "setScore": {
-      if ((a.score1 === null) !== (a.score2 === null)) throw new UserError("Enter both scores, or clear both.");
-      if (a.score1 !== null && a.score1 === a.score2) throw new UserError("Scores can't be equal: someone has to win.");
-      if (a.score1 !== null && a.score2 !== null) {
+      let { score1, score2 } = a;
+      const games = a.games?.length ? a.games : null;
+      if (games) {
+        const fromGames = scoreFromGames(games);
+        if (!fromGames) throw new UserError("A game can't end in a draw: check the game scores.");
+        [score1, score2] = fromGames;
+      }
+      if ((score1 === null) !== (score2 === null)) throw new UserError("Enter both scores, or clear both.");
+      if (score1 !== null && score1 === score2) throw new UserError("Scores can't be equal: someone has to win.");
+      if (score1 !== null && score2 !== null) {
         const m = maybe(
           await db().from("matches").select("season:seasons(games_per_match)").eq("id", a.matchId).maybeSingle<{ season: { games_per_match: number } }>(),
         );
         if (!m) throw new UserError("Match not found.");
-        const games = m.season.games_per_match;
-        if (!isValidScore(games, a.score1, a.score2)) {
-          throw new UserError(`Each match is ${games} games, so the two scores must add up to ${games} (e.g. ${games - 1}–1).`);
+        const n = m.season.games_per_match;
+        if (games && games.length !== n) throw new UserError(`Enter the points for all ${n} games.`);
+        if (!isValidScore(n, score1, score2)) {
+          throw new UserError(`Each match is ${n} games, so the two scores must add up to ${n} (e.g. ${n - 1}–1).`);
         }
       }
-      const played = a.score1 !== null;
+      const played = score1 !== null;
       const rows = ok(
         await db()
           .from("matches")
-          .update({ score1: a.score1, score2: a.score2, played_at: played ? new Date().toISOString() : null })
+          .update({ score1, score2, game_scores: played ? games : null, played_at: played ? new Date().toISOString() : null })
           .eq("id", a.matchId)
           .select("id"),
       );

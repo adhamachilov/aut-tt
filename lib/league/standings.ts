@@ -1,8 +1,8 @@
-import { POINTS } from "./rules";
 import type { Match, StandingRow } from "./types";
 
+// Points are games won (3–0 gives the winner 3, 2–1 gives 2 and 1).
 // Ranking: most points; then points from matches between the tied players; then
-// games difference; then games won; then name, so the order is always stable.
+// matches won; then games difference; then name, so the order is always stable.
 export function computeStandings(players: readonly { id: string; name: string }[], matches: readonly Match[]): StandingRow[] {
   const played = matches
     .filter((m) => m.score1 !== null && m.score2 !== null)
@@ -24,7 +24,7 @@ export function computeStandings(players: readonly { id: string; name: string }[
       row.played++;
       if (won) row.wins++;
       else row.losses++;
-      row.points += won ? POINTS.win : POINTS.loss;
+      row.points += own;
       row.scoreFor += own;
       row.scoreAgainst += other;
       if (row.form.length < 5) row.form.push(won ? "W" : "L");
@@ -42,16 +42,15 @@ export function computeStandings(players: readonly { id: string; name: string }[
     const h2h = new Map(group.map((r) => [r.playerId, 0]));
     for (const m of played) {
       if (ids.has(m.player1Id) && ids.has(m.player2Id)) {
-        const p1won = m.score1! > m.score2!;
-        h2h.set(m.player1Id, h2h.get(m.player1Id)! + (p1won ? POINTS.win : POINTS.loss));
-        h2h.set(m.player2Id, h2h.get(m.player2Id)! + (p1won ? POINTS.loss : POINTS.win));
+        h2h.set(m.player1Id, h2h.get(m.player1Id)! + m.score1!);
+        h2h.set(m.player2Id, h2h.get(m.player2Id)! + m.score2!);
       }
     }
     group.sort(
       (a, b) =>
         h2h.get(b.playerId)! - h2h.get(a.playerId)! ||
+        b.wins - a.wins ||
         b.scoreFor - b.scoreAgainst - (a.scoreFor - a.scoreAgainst) ||
-        b.scoreFor - a.scoreFor ||
         (names.get(a.playerId) ?? "").localeCompare(names.get(b.playerId) ?? ""),
     );
     ordered.push(...group);

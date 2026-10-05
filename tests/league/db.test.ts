@@ -195,6 +195,15 @@ describe("match days", () => {
     await set(null, null);
   });
 
+  it("stores game scores only together with a result", async () => {
+    const { s, ids } = await running(2);
+    await addDay(s, ids, 1);
+    const id = (await db.query<{ id: string }>("select id from public.matches where season_id = $1", [s])).rows[0].id;
+    expect(await fails(db.query("update public.matches set game_scores = '[[11,9]]' where id = $1", [id]))).toMatch(/check/);
+    await db.query("update public.matches set score1 = 3, score2 = 0, played_at = now(), game_scores = '[[11,0],[11,0],[11,0]]' where id = $1", [id]);
+    expect(await fails(db.query("update public.matches set game_scores = '{\"a\":1}' where id = $1", [id]))).toMatch(/check/);
+  });
+
   it("removing a player from a season deletes their matches", async () => {
     const { s, ids } = await running(4);
     await addDay(s, ids, 3);
