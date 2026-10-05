@@ -25,7 +25,7 @@ A simple round-robin table tennis league that runs entirely inside a Telegram Mi
 - **Finish the season,** or delete it.
 - **Manage players.** Edit a player's name, major or year, or ban them. A banned player can't join seasons and is taken out of any season that hasn't started yet.
 
-**Ranking:** every game won is 1 point, so a 3–0 win gives 3 points and a 2–1 gives 2 to the winner and 1 to the loser. Most points first. Ties are broken by the points from matches between the tied players, then games difference (+/-), then games won.
+**Ranking:** every game won is 1 point, so a 3–0 win gives 3 points and a 2–1 gives 2 to the winner and 1 to the loser. Most points first. Ties are broken by the points from matches between the tied players, then matches won, then games difference (+/-).
 
 Only one season can be open or running at a time. Past seasons stay viewable from the season picker.
 
