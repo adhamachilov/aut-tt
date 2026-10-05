@@ -2,8 +2,8 @@ import "server-only";
 import { createClient, type PostgrestError, type SupabaseClient } from "@supabase/supabase-js";
 import { after } from "next/server";
 import { z } from "zod";
-import { env } from "@/lib/env";
-import { notifyMatchDay } from "@/lib/telegram/notify";
+import { adminTelegramIds, env } from "@/lib/env";
+import { dayLabel, notifyMatchDay, type DayNotice, type Person } from "@/lib/telegram/notify";
 import { UserError } from "./http";
 import { planMatchDay } from "./matchday";
 import { GAMES_PER_MATCH, isValidScore, scoreFromGames, MAX_MATCHES_PER_DAY, MAX_MATCHES_PER_PLAYER } from "./rules";
@@ -250,6 +250,8 @@ const actionSchema = z.discriminatedUnion("action", [
     notify: z.boolean(),
   }),
   z.object({ action: z.literal("removeMatchDay"), seasonId: id, day: z.number().int().positive() }),
+  z.object({ action: z.literal("setDayDate"), seasonId: id, day: z.number().int().positive(), date: z.iso.date({ error: "Choose a date." }), notify: z.boolean() }),
+  z.object({ action: z.literal("notifyDay"), seasonId: id, day: z.number().int().positive() }),
   z.object({ action: z.literal("finishSeason"), seasonId: id }),
   z.object({ action: z.literal("deleteSeason"), seasonId: id }),
   z.object({ action: z.literal("addToSeason"), seasonId: id, playerId: id }),
@@ -271,6 +273,52 @@ async function seasonRow(seasonId: string): Promise<SeasonRow> {
   const s = maybe(await db().from("seasons").select("*").eq("id", seasonId).maybeSingle<SeasonRow>());
   if (!s) throw new UserError("Season not found.");
   return s;
+}
+
+/** Everything needed to message the players of a day's unplayed matches. */
+export async function dayNotice(seasonId: string, day: number, note?: string): Promise<DayNotice> {
+  const [season, matches] = await Promise.all([
+    seasonRow(seasonId),
+    db()
+      .from("matches")
+      .select("round, day_date, player1_id, player2_id")
+      .eq("season_id", seasonId)
+      .eq("day", day)
+      .is("played_at", null)
+      .order("round")
+      .returns<{ round: number; day_date: string | null; player1_id: string; player2_id: string }[]>()
+      .then(ok),
+  ]);
+  const ids = [...new Set(matches.flatMap((m) => [m.player1_id, m.player2_id]))];
+  const admins = [...adminTelegramIds()];
+  const [people, organizers] = await Promise.all([
+    ids.length
+      ? db().from("players").select("id, name, telegram_id, username").in("id", ids).returns<{ id: string; name: string; telegram_id: number; username: string | null }[]>().then(ok)
+      : [],
+    admins.length
+      ? db().from("players").select("name, telegram_id, username").in("telegram_id", admins).returns<{ name: string; telegram_id: number; username: string | null }[]>().then(ok)
+      : [],
+  ]);
+  const person = (p: { name: string; telegram_id: number; username: string | null }): Person => ({ name: p.name, telegramId: p.telegram_id, username: p.username });
+  const who = new Map(people.map((p) => [p.id, person(p)]));
+  const organizer = organizers.find((o) => o.username) ?? organizers[0];
+  return {
+    day,
+    date: matches[0]?.day_date ?? new Date().toISOString().slice(0, 10),
+    gamesPerMatch: season.games_per_match,
+    matches: matches.map((m) => ({ round: m.round, player1: who.get(m.player1_id)!, player2: who.get(m.player2_id)! })),
+    organizer: organizer ? person(organizer) : null,
+    note,
+  };
+}
+
+/** Messages the day's players after the response is sent, so the admin doesn't wait on Telegram. */
+function notifyLater(seasonId: string, day: number, note?: string) {
+  if (!env().TELEGRAM_BOT_TOKEN) return;
+  after(async () => {
+    const notice = await dayNotice(seasonId, day, note);
+    if (notice.matches.length) await notifyMatchDay(notice);
+  });
 }
 
 export async function runAdminAction(input: unknown): Promise<void> {
@@ -318,15 +366,22 @@ export async function runAdminAction(input: unknown): Promise<void> {
         history.map((m) => ({ player1Id: m.player1_id, player2Id: m.player2_id })),
       );
       const day = ok(await db().rpc("add_match_day", { p_season: a.seasonId, p_date: a.date, p_matches: plan })) as number;
-      if (a.notify && env().TELEGRAM_BOT_TOKEN) {
-        const [season, people] = await Promise.all([
-          seasonRow(a.seasonId),
-          db().from("players").select("id, name, telegram_id").in("id", a.playerIds).returns<{ id: string; name: string; telegram_id: number }[]>().then(ok),
-        ]);
-        const who = new Map(people.map((p) => [p.id, { name: p.name, telegramId: p.telegram_id }]));
-        const matches = plan.map((m) => ({ round: m.round, player1: who.get(m.player1)!, player2: who.get(m.player2)! }));
-        after(() => notifyMatchDay(day, a.date, season.games_per_match, matches));
-      }
+      if (a.notify) notifyLater(a.seasonId, day);
+      return;
+    }
+
+    case "setDayDate": {
+      const rows = ok(await db().from("matches").update({ day_date: a.date }).eq("season_id", a.seasonId).eq("day", a.day).select("id"));
+      if (!rows.length) throw new UserError("That day has no matches.");
+      if (a.notify) notifyLater(a.seasonId, a.day, `Date changed: Day ${a.day} is now on ${dayLabel(a.date)}.`);
+      return;
+    }
+
+    case "notifyDay": {
+      if (!env().TELEGRAM_BOT_TOKEN) throw new UserError("The bot isn't configured, so messages can't be sent.");
+      const notice = await dayNotice(a.seasonId, a.day);
+      if (!notice.matches.length) throw new UserError("That day has no unplayed matches to tell anyone about.");
+      after(() => notifyMatchDay(notice));
       return;
     }
 

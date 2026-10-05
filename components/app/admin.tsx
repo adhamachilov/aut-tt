@@ -8,7 +8,7 @@ import { buttonClass, Card, EmptyState, Pill } from "@/components/ui/primitives"
 import { useLeague } from "./league-app";
 import { Field, inputClass, StudyFields, type Study } from "./profile-form";
 import { SeasonPicker } from "./standings";
-import { Avatar, byDayThenOrder, dayTitle, gamesText, formatDateTime, fromLocalInput, played, Segmented, Sheet, todayInput, toLocalInput } from "./ui";
+import { addDays, Avatar, byDayThenOrder, dayTitle, formatDateTime, formatDay, fromLocalInput, gamesText, nextMatchDate, played, Segmented, Sheet, todayInput, toLocalInput } from "./ui";
 
 function useAdmin() {
   const ctx = useLeague();
@@ -359,10 +359,35 @@ function PlanDay({ admin }: { admin: AdminCtx }) {
   );
 }
 
+function DatePicker({ value, onChange }: { value: string; onChange: (date: string) => void }) {
+  const today = todayInput();
+  const tomorrow = addDays(today, 1);
+  const quick = (date: string, label: string) => (
+    <button
+      type="button"
+      aria-pressed={value === date}
+      onClick={() => onChange(date)}
+      className={cn("h-10 shrink-0 rounded-xl px-3 text-[14px] font-medium ring-1 ring-inset", value === date ? "bg-ink text-bg ring-ink" : "bg-surface ring-line-strong")}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div>
+      <div className="flex gap-2">
+        {quick(today, "Today")}
+        {quick(tomorrow, "Tomorrow")}
+        <input type="date" value={value} onChange={(e) => onChange(e.target.value)} aria-label="Date" className={cn(inputClass, "h-10 min-w-0 flex-1 text-[15px]")} />
+      </div>
+      {value && <p className="mt-1.5 text-[13px] font-medium">{formatDay(value)}</p>}
+    </div>
+  );
+}
+
 function DayPlanner({ admin, nextDay, onDone }: { admin: AdminCtx; nextDay: number; onDone: () => void }) {
   const { league, act } = admin;
   const { season, players, matches } = league!;
-  const [date, setDate] = useState(todayInput);
+  const [date, setDate] = useState(() => nextMatchDate(matches));
   const [absent, setAbsent] = useState<Set<string>>(new Set());
   const [mode, setMode] = useState<"perPlayer" | "total">("total");
   const [count, setCount] = useState(3);
@@ -394,9 +419,10 @@ function DayPlanner({ admin, nextDay, onDone }: { admin: AdminCtx; nextDay: numb
         </span>
         .
       </p>
-      <Field label="Date">
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={cn(inputClass, "h-10 text-[15px]")} />
-      </Field>
+      <div>
+        <span className="mb-1.5 block text-[13px] font-medium text-ink-2">When is Day {nextDay}?</span>
+        <DatePicker value={date} onChange={setDate} />
+      </div>
       <div>
         <span className="mb-1.5 block text-[13px] font-medium text-ink-2">How many matches</span>
         <Segmented
@@ -406,7 +432,7 @@ function DayPlanner({ admin, nextDay, onDone }: { admin: AdminCtx; nextDay: numb
             setCount(m === "total" ? 3 : 1);
           }}
           options={[
-            { value: "total", label: "Total today" },
+            { value: "total", label: "Total" },
             { value: "perPlayer", label: "Per player" },
           ]}
         />
@@ -418,22 +444,22 @@ function DayPlanner({ admin, nextDay, onDone }: { admin: AdminCtx; nextDay: numb
           <button type="button" aria-label="More" disabled={count >= max} onClick={() => setCount(count + 1)} className={buttonClass("secondary", "md", "w-11 px-0")}>
             +
           </button>
-          <span className="text-sm text-ink-2">{mode === "perPlayer" ? (count === 1 ? "match each" : "matches each") : count === 1 ? "match today" : "matches today"}</span>
+          <span className="text-sm text-ink-2">{mode === "perPlayer" ? (count === 1 ? "match each" : "matches each") : count === 1 ? "match that day" : "matches that day"}</span>
         </div>
         {n >= 2 && (
           <p className="mt-1.5 text-[12px] text-ink-3">
             {mode === "perPlayer"
-              ? `${total} matches today. Everyone here plays ${count}${(n * count) % 2 ? `, except one player who plays ${count - 1}` : ""}.`
+              ? `${total} matches. Everyone plays ${count}${(n * count) % 2 ? `, except one player who plays ${count - 1}` : ""}.`
               : 2 * total >= n
-                ? `${total} matches today. Everyone here plays${2 * total > n ? ", some more than once" : ""}.`
-                : `${total} matches today: the app picks ${2 * total} of the ${n} players here. The others go first next time.`}
+                ? `${total} matches. Everyone plays${2 * total > n ? ", some more than once" : ""}.`
+                : `${total} matches: the app picks ${2 * total} of the ${n} players. The others go first next time.`}
           </p>
         )}
       </div>
       <div>
         <button type="button" onClick={() => setShowWho(!showWho)} aria-expanded={showWho} className="flex w-full items-center justify-between text-left">
           <span className="text-[13px] font-medium text-ink-2">
-            Who can play today · {n}/{players.length}
+            Who can play · {n}/{players.length}
           </span>
           <span className="text-[13px] font-medium text-ink-3">{showWho ? "Hide" : absent.size ? "Change" : "Everyone · change"}</span>
         </button>
@@ -474,8 +500,63 @@ function DayPlanner({ admin, nextDay, onDone }: { admin: AdminCtx; nextDay: numb
         }}
         className={buttonClass("primary", "lg", "w-full")}
       >
-        {busy ? "Creating…" : n < 2 ? "Pick at least 2 players" : `Create Day ${nextDay} · ${total} matches`}
+        {busy ? "Creating…" : n < 2 ? "Pick at least 2 players" : `Create Day ${nextDay} · ${date ? formatDay(date) : "pick a date"} · ${total} matches`}
       </button>
+    </div>
+  );
+}
+
+function DayTools({ admin, day, date, unplayed }: { admin: AdminCtx; day: number; date: string | null; unplayed: number }) {
+  const season = admin.league!.season!;
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(date ?? todayInput());
+  const [tell, setTell] = useState(unplayed > 0);
+  const [busy, setBusy] = useState(false);
+
+  const resend = async () => {
+    if (!(await admin.confirm(`Send Day ${day}'s ${unplayed} unplayed matches to their players again on Telegram?`))) return;
+    await admin.act({ action: "notifyDay", seasonId: season.id, day }, "Messages are being sent.");
+  };
+
+  return (
+    <div>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" onClick={() => setEditing(!editing)} aria-expanded={editing} className={buttonClass("secondary", "sm")}>
+          📅 Change date
+        </button>
+        {unplayed > 0 && (
+          <button type="button" onClick={resend} className={buttonClass("secondary", "sm")}>
+            ✉️ Message players again
+          </button>
+        )}
+      </div>
+      {editing && (
+        <div className="mt-2 space-y-3 rounded-xl bg-surface-2 p-3">
+          <DatePicker value={value} onChange={setValue} />
+          {unplayed > 0 && (
+            <label className="flex items-center gap-3">
+              <input type="checkbox" checked={tell} onChange={(e) => setTell(e.target.checked)} className="size-5" />
+              <span className="text-sm">Tell the players about the new date</span>
+            </label>
+          )}
+          <button
+            type="button"
+            disabled={busy || !value || value === date}
+            onClick={async () => {
+              setBusy(true);
+              const ok = await admin.act(
+                { action: "setDayDate", seasonId: season.id, day, date: value, notify: tell && unplayed > 0 },
+                `Day ${day} moved to ${formatDay(value)}.${tell && unplayed > 0 ? " Players are being told." : ""}`,
+              );
+              setBusy(false);
+              if (ok) setEditing(false);
+            }}
+            className={buttonClass("primary", "md", "w-full")}
+          >
+            {value === date ? "Pick a different date" : `Move Day ${day} to ${formatDay(value)}`}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -538,6 +619,9 @@ function Results({ admin }: { admin: AdminCtx }) {
             </button>
           )}
         </div>
+        {!q && season!.status === "active" && (
+          <DayTools key={shown} admin={admin} day={shown} date={ofDay(shown)[0]?.dayDate ?? null} unplayed={ofDay(shown).filter((m) => !played(m)).length} />
+        )}
         <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find a player in any day…" className={cn(inputClass, "h-10 text-[15px]")} />
       </div>
 

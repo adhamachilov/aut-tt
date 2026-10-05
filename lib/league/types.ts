@@ -135,6 +135,8 @@ export type AdminAction =
   | { action: "startSeason"; seasonId: string }
   | { action: "addMatchDay"; seasonId: string; date: string; playerIds: string[]; mode: "perPlayer" | "total"; count: number; notify: boolean }
   | { action: "removeMatchDay"; seasonId: string; day: number }
+  | { action: "setDayDate"; seasonId: string; day: number; date: string; notify: boolean }
+  | { action: "notifyDay"; seasonId: string; day: number }
   | { action: "finishSeason"; seasonId: string }
   | { action: "deleteSeason"; seasonId: string }
   | { action: "addToSeason"; seasonId: string; playerId: string }

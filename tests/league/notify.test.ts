@@ -13,24 +13,40 @@ vi.mock("@/lib/telegram/bot", async (load) => ({
 const { notifyMatchDay } = await import("@/lib/telegram/notify");
 
 describe("notifyMatchDay", () => {
-  it("sends each player one message with all their matches, and survives a blocked bot", async () => {
-    const a = { name: "Adham", telegramId: 1 };
-    const b = { name: "Bek <script>", telegramId: 2 };
-    const c = { name: "Cara", telegramId: 3 };
-    const d = { name: "Dan", telegramId: 4 };
-    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
-    await notifyMatchDay(2, "2026-10-05", 3, [
-      { round: 1, player1: a, player2: b },
-      { round: 2, player1: c, player2: a },
-      { round: 3, player1: d, player2: c },
-    ]);
+  const a = { name: "Adham", telegramId: 1, username: "a_adham" };
+  const b = { name: "Bek <script>", telegramId: 2, username: "bek_1" };
+  const c = { name: "Cara", telegramId: 3, username: null };
+  const d = { name: "Dan", telegramId: 4, username: "dan" };
 
-    expect(sent.map((m) => m.chatId).sort()).toEqual([1, 2, 3]);
-    const adham = sent.find((m) => m.chatId === 1)!.text;
-    expect(adham).toContain("Day 2 · Mon 5 Oct");
-    expect(adham).toContain("Match 1: vs <b>Bek &lt;script&gt;</b>");
-    expect(adham).toContain("Match 2: vs <b>Cara</b>");
-    expect(sent.find((m) => m.chatId === 2)!.text).toContain("Match 1: vs <b>Adham</b>");
+  it("sends each player one message with their opponents' contacts and the time instructions", async () => {
+    sent.length = 0;
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const result = await notifyMatchDay({
+      day: 2,
+      date: "2026-10-06",
+      gamesPerMatch: 3,
+      organizer: a,
+      note: "Correction: Day 2 is on Tuesday 6 Oct.",
+      matches: [
+        { round: 1, player1: a, player2: b },
+        { round: 2, player1: c, player2: a },
+        { round: 3, player1: d, player2: c },
+      ],
+    });
+
+    expect(result).toEqual({ sent: 3, total: 4 });
     expect(errors).toHaveBeenCalledOnce();
+    const bek = sent.find((m) => m.chatId === 2)!.text;
+    expect(bek).toContain("⚠️ <b>Correction: Day 2 is on Tuesday 6 Oct.</b>");
+    expect(bek).toContain("Day 2 · Tue 6 Oct");
+    expect(bek).toContain("Match 1: vs <b>Adham</b> — @a_adham");
+    expect(bek).toContain("agree on a time to play. Then tell the organizer (@a_adham) the time you chose.");
+
+    const adham = sent.find((m) => m.chatId === 1)!.text;
+    expect(adham).toContain("Match 1: vs <b>Bek &lt;script&gt;</b> — @bek_1");
+    // Cara has no username: a tap-to-open mention instead.
+    expect(adham).toContain('Match 2: vs <b>Cara</b> — <a href="tg://user?id=3">Cara</a>');
+    // The organizer isn't told to tell themselves.
+    expect(adham).toContain("Then tell the organizer the time you chose.");
   });
 });

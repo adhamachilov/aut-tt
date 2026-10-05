@@ -175,3 +175,18 @@ export function todayInput(): string {
 export const dayTitle = (day: number, date: string | null) => `Day ${day}${date ? ` · ${formatDay(date)}` : ""}`;
 
 export const byDayThenOrder = (a: Match, b: Match) => a.day - b.day || a.round - b.round;
+
+/** "2026-10-05" + 1 → "2026-10-06", on calendar dates (no time zones involved). */
+export function addDays(date: string, days: number): string {
+  const [y, m, d] = date.split("-").map(Number);
+  const next = new Date(Date.UTC(y, m - 1, d + days));
+  return next.toISOString().slice(0, 10);
+}
+
+/** The day after the latest match day, but never in the past. */
+export function nextMatchDate(matches: readonly Match[]): string {
+  const today = todayInput();
+  const last = matches.reduce<string | null>((max, m) => (m.dayDate && (!max || m.dayDate > max) ? m.dayDate : max), null);
+  const next = last ? addDays(last, 1) : today;
+  return next > today ? next : today;
+}
