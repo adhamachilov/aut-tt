@@ -3,7 +3,18 @@ import { createClient, type PostgrestError, type SupabaseClient } from "@supabas
 import { after } from "next/server";
 import { z } from "zod";
 import { adminTelegramIds, env } from "@/lib/env";
-import { dayLabel, notifyMatchDay, type DayNotice, type Person } from "@/lib/telegram/notify";
+import { sendMessage } from "@/lib/telegram/bot";
+import {
+  dayLabel,
+  nextMessage,
+  notifyMatchDay,
+  reminderMessage,
+  resultMessage,
+  tableMessage,
+  type DayNotice,
+  type Person,
+  type ReminderMatch,
+} from "@/lib/telegram/notify";
 import { UserError } from "./http";
 import { planMatchDay } from "./matchday";
 import { GAMES_PER_MATCH, isValidScore, scoreFromGames, MAX_MATCHES_PER_DAY, MAX_MATCHES_PER_PLAYER } from "./rules";
@@ -298,26 +309,171 @@ export async function dayNotice(seasonId: string, day: number, note?: string, on
       .then((rows) => (onlyMatchId ? rows.filter((m) => m.id === onlyMatchId) : rows)),
   ]);
   const ids = [...new Set(matches.flatMap((m) => [m.player1_id, m.player2_id]))];
-  const admins = [...adminTelegramIds()];
-  const [people, organizers] = await Promise.all([
-    ids.length
-      ? db().from("players").select("id, name, telegram_id, username").in("id", ids).returns<{ id: string; name: string; telegram_id: number; username: string | null }[]>().then(ok)
-      : [],
-    admins.length
-      ? db().from("players").select("name, telegram_id, username").in("telegram_id", admins).returns<{ name: string; telegram_id: number; username: string | null }[]>().then(ok)
-      : [],
-  ]);
-  const person = (p: { name: string; telegram_id: number; username: string | null }): Person => ({ name: p.name, telegramId: p.telegram_id, username: p.username });
-  const who = new Map(people.map((p) => [p.id, person(p)]));
-  const organizer = organizers.find((o) => o.username) ?? organizers[0];
+  const [who, organizer] = await Promise.all([peopleById(ids), organizerPerson()]);
   return {
     day,
     date: matches[0]?.day_date ?? new Date().toISOString().slice(0, 10),
     gamesPerMatch: season.games_per_match,
     matches: matches.map((m) => ({ round: m.round, player1: who.get(m.player1_id)!, player2: who.get(m.player2_id)! })),
-    organizer: organizer ? person(organizer) : null,
+    organizer,
     note,
   };
+}
+
+interface PersonRow {
+  id: string;
+  name: string;
+  telegram_id: number;
+  username: string | null;
+}
+
+const toPerson = (p: PersonRow): Person => ({ name: p.name, telegramId: p.telegram_id, username: p.username });
+
+async function peopleById(ids: string[]): Promise<Map<string, Person>> {
+  if (!ids.length) return new Map();
+  const rows = ok(await db().from("players").select("id, name, telegram_id, username").in("id", ids).returns<PersonRow[]>());
+  return new Map(rows.map((p) => [p.id, toPerson(p)]));
+}
+
+/** The organizer players are told to contact: an admin who has registered, preferably one with a username. */
+async function organizerPerson(): Promise<Person | null> {
+  const admins = [...adminTelegramIds()];
+  if (!admins.length) return null;
+  const rows = ok(await db().from("players").select("id, name, telegram_id, username").in("telegram_id", admins).returns<PersonRow[]>());
+  const pick = rows.find((o) => o.username) ?? rows[0];
+  return pick ? toPerson(pick) : null;
+}
+
+async function currentSeasonRow(): Promise<SeasonRow | null> {
+  return maybe(await db().from("seasons").select("*").neq("status", "finished").limit(1).maybeSingle<SeasonRow>());
+}
+
+/** Today's calendar date (YYYY-MM-DD) in the league's time zone. */
+export function leagueToday(now = new Date()): string {
+  return now.toLocaleDateString("en-CA", { timeZone: env().LEAGUE_TIMEZONE });
+}
+
+async function unplayedMatches(seasonId: string) {
+  return ok(
+    await db()
+      .from("matches")
+      .select("day, day_date, round, player1_id, player2_id")
+      .eq("season_id", seasonId)
+      .is("played_at", null)
+      .order("day")
+      .order("round")
+      .returns<{ day: number; day_date: string | null; round: number; player1_id: string; player2_id: string }[]>(),
+  );
+}
+
+/** Morning reminders: everyone who plays today, plus anyone with an older match still unplayed. */
+export async function sendDailyReminders(today = leagueToday()): Promise<{ sent: number; total: number }> {
+  const season = await currentSeasonRow();
+  if (!season || season.status !== "active") return { sent: 0, total: 0 };
+  const due = (await unplayedMatches(season.id)).filter((m) => m.day_date && m.day_date <= today);
+  const [who, organizer] = await Promise.all([peopleById([...new Set(due.flatMap((m) => [m.player1_id, m.player2_id]))]), organizerPerson()]);
+
+  const perPlayer = new Map<string, { today: ReminderMatch[]; overdue: ReminderMatch[] }>();
+  for (const m of due) {
+    for (const [me, them] of [
+      [m.player1_id, m.player2_id],
+      [m.player2_id, m.player1_id],
+    ]) {
+      const entry = perPlayer.get(me) ?? { today: [], overdue: [] };
+      (m.day_date === today ? entry.today : entry.overdue).push({ day: m.day, date: m.day_date!, opponent: who.get(them)! });
+      perPlayer.set(me, entry);
+    }
+  }
+
+  const button = appButton();
+  let sent = 0;
+  const jobs = [...perPlayer].map(([id, { today: t, overdue }]) => async () => {
+    const me = who.get(id)!;
+    await sendMessage(me.telegramId, reminderMessage(t, overdue, organizer, me), button);
+  });
+  for (let i = 0; i < jobs.length; i += 20) {
+    const results = await Promise.allSettled(jobs.slice(i, i + 20).map((j) => j()));
+    for (const r of results) {
+      if (r.status === "fulfilled") sent++;
+      else console.error("[reminders]", r.reason instanceof Error ? r.reason.message : r.reason);
+    }
+  }
+  return { sent, total: jobs.length };
+}
+
+function appButton() {
+  const url = env().APP_URL;
+  return url ? [[{ text: "🏓 Open League", web_app: { url } }]] : undefined;
+}
+
+async function seasonTable(seasonId: string) {
+  const [entries, rows] = await Promise.all([
+    db().from("season_players").select("player:players(id, name)").eq("season_id", seasonId).returns<{ player: { id: string; name: string } }[]>().then(ok),
+    db().from("matches").select("*").eq("season_id", seasonId).returns<MatchRow[]>().then(ok),
+  ]);
+  const players = entries.map((e) => e.player);
+  return { players, standings: computeStandings(players, rows.map(toMatch)) };
+}
+
+/** Tells both players a result was saved, with their points and table position. */
+async function notifyResult(matchId: string, corrected: boolean) {
+  const m = maybe(await db().from("matches").select("*").eq("id", matchId).maybeSingle<MatchRow>());
+  if (!m || m.score1 === null || m.score2 === null) return;
+  const [who, { standings }] = await Promise.all([peopleById([m.player1_id, m.player2_id]), seasonTable(m.season_id)]);
+  const sides = [
+    { me: m.player1_id, them: m.player2_id, mine: m.score1, theirs: m.score2, games: m.game_scores },
+    { me: m.player2_id, them: m.player1_id, mine: m.score2, theirs: m.score1, games: m.game_scores?.map(([a, b]) => [b, a] as [number, number]) ?? null },
+  ];
+  await Promise.allSettled(
+    sides.map(async (side) => {
+      const me = who.get(side.me);
+      const row = standings.find((r) => r.playerId === side.me);
+      if (!me || !row) return;
+      const text = resultMessage({
+        day: m.day,
+        date: m.day_date,
+        corrected,
+        me,
+        opponent: who.get(side.them)!,
+        myScore: side.mine,
+        theirScore: side.theirs,
+        games: side.games,
+        position: row.position,
+        points: row.points,
+      });
+      await sendMessage(me.telegramId, text, appButton()).catch((e) => console.error("[result]", e instanceof Error ? e.message : e));
+    }),
+  );
+}
+
+/** Reply to /next: the sender's unplayed matches in the current season. */
+export async function botNext(telegramId: number): Promise<string> {
+  const me = await getPlayerByTelegramId(telegramId);
+  if (!me) return "You're not registered yet. Tap 🏓 Open League to sign up.";
+  const season = await currentSeasonRow();
+  if (!season) return "There's no season running right now.";
+  const mine = (await unplayedMatches(season.id)).filter((m) => m.player1_id === me.id || m.player2_id === me.id);
+  const [who, organizer] = await Promise.all([peopleById([...new Set(mine.flatMap((m) => [m.player1_id, m.player2_id]))]), organizerPerson()]);
+  const upcoming = mine.map((m) => ({ day: m.day, date: m.day_date ?? leagueToday(), opponent: who.get(m.player1_id === me.id ? m.player2_id : m.player1_id)! }));
+  return nextMessage(upcoming, organizer, { name: me.name, telegramId, username: me.username });
+}
+
+/** Reply to /table: the top 10, plus the sender's row if they're further down. */
+export async function botTable(telegramId: number): Promise<string> {
+  const season = await currentSeasonRow();
+  if (!season) return "There's no season running right now.";
+  const [{ players, standings }, me] = await Promise.all([seasonTable(season.id), getPlayerByTelegramId(telegramId)]);
+  const names = new Map(players.map((p) => [p.id, p.name]));
+  const line = (r: (typeof standings)[number]) => ({
+    position: r.position,
+    name: names.get(r.playerId) ?? "?",
+    points: r.points,
+    wins: r.wins,
+    losses: r.losses,
+    isMe: r.playerId === me?.id,
+  });
+  const mine = standings.find((r) => r.playerId === me?.id);
+  return tableMessage(season.name, standings.slice(0, 10).map(line), mine ? line(mine) : null);
 }
 
 /** Messages the day's players after the response is sent, so the admin doesn't wait on Telegram. */
@@ -478,6 +634,7 @@ export async function runAdminAction(input: unknown): Promise<void> {
         }
       }
       const played = score1 !== null;
+      const before = maybe(await db().from("matches").select("played_at").eq("id", a.matchId).maybeSingle<{ played_at: string | null }>());
       const rows = ok(
         await db()
           .from("matches")
@@ -486,6 +643,7 @@ export async function runAdminAction(input: unknown): Promise<void> {
           .select("id"),
       );
       if (!rows.length) throw new UserError("Match not found.");
+      if (played && env().TELEGRAM_BOT_TOKEN) after(() => notifyResult(a.matchId, !!before?.played_at));
       return;
     }
 

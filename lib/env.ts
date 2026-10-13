@@ -10,6 +10,10 @@ const schema = z.object({
   TELEGRAM_WEBHOOK_SECRET: z.string().regex(/^[A-Za-z0-9_-]{16,256}$/).optional(),
   APP_URL: z.url().optional(),
   LEAGUE_NAME: z.string().min(1).default("Table Tennis League"),
+  /** Used for "today" in daily reminders. */
+  LEAGUE_TIMEZONE: z.string().min(1).default("Asia/Tashkent"),
+  /** Vercel sends it as a Bearer token to cron routes. */
+  CRON_SECRET: z.string().min(16).optional(),
   ADMIN_TELEGRAM_IDS: z
     .string()
     .regex(/^\d+(\s*,\s*\d+)*$/, "must be comma-separated Telegram user IDs")

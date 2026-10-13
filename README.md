@@ -25,6 +25,12 @@ A simple round-robin table tennis league that runs entirely inside a Telegram Mi
 - **Finish the season,** or delete it.
 - **Manage players.** Edit a player's name, major or year, or ban them. A banned player can't join seasons and is taken out of any season that hasn't started yet.
 
+**In the bot chat:**
+
+- `/next` lists your upcoming matches with each opponent's @username; `/table` shows the top 10 and your own position.
+- Every morning (about 08:00 Tashkent time, set by `LEAGUE_TIMEZONE`) players who play that day, or still have an older match to play, get a reminder.
+- When a result is saved, both players get it with the game scores, their new points and table position.
+
 **Ranking:** every game won is 1 point, so a 3–0 win gives 3 points and a 2–1 gives 2 to the winner and 1 to the loser. Most points first. Ties are broken by the points from matches between the tied players, then matches won, then games difference (+/-).
 
 Only one season can be open or running at a time. Past seasons stay viewable from the season picker.
@@ -49,6 +55,8 @@ npm run dev                       # http://localhost:3000
 | `APP_URL` | Public `https://` URL of the app. |
 | `TELEGRAM_WEBHOOK_SECRET` | Any random 16+ character string (`openssl rand -hex 32`). |
 | `LEAGUE_NAME` | Shown in the app and in the bot's messages. |
+| `LEAGUE_TIMEZONE` | Time zone for "today" in the daily reminders. Default `Asia/Tashkent`. |
+| `CRON_SECRET` | Random string; Vercel Cron sends it to `/api/cron/reminders` (schedule in `vercel.json`). |
 | `ALLOW_DEV_TELEGRAM_LOGIN`, `DEV_TELEGRAM_USER_ID` | Development only: open the app in a normal browser as that Telegram user. Ignored in production. |
 
 ### Put it in Telegram

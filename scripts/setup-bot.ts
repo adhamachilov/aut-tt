@@ -32,7 +32,13 @@ async function call(method: string, body: Record<string, unknown>) {
 async function main() {
   await call("setWebhook", { url: new URL("/api/telegram/webhook", appUrl).toString(), secret_token: secret, allowed_updates: ["message"] });
   await call("setChatMenuButton", { menu_button: { type: "web_app", text: "League", web_app: { url: appUrl } } });
-  await call("setMyCommands", { commands: [{ command: "start", description: `Open ${league}` }] });
+  await call("setMyCommands", {
+    commands: [
+      { command: "start", description: `Open ${league}` },
+      { command: "next", description: "My next matches" },
+      { command: "table", description: "League table" },
+    ],
+  });
   console.log(`\nDone. Open your bot in Telegram and send /start.`);
 }
 
