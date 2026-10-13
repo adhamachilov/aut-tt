@@ -137,6 +137,8 @@ export type AdminAction =
   | { action: "removeMatchDay"; seasonId: string; day: number }
   | { action: "setDayDate"; seasonId: string; day: number; date: string; notify: boolean }
   | { action: "notifyDay"; seasonId: string; day: number }
+  /** day: an existing day number, or null for a new day on `date`. */
+  | { action: "moveMatch"; matchId: string; day: number | null; date: string; notify: boolean }
   | { action: "finishSeason"; seasonId: string }
   | { action: "deleteSeason"; seasonId: string }
   | { action: "addToSeason"; seasonId: string; playerId: string }

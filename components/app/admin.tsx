@@ -400,6 +400,7 @@ function DayPlanner({ admin, nextDay, onDone }: { admin: AdminCtx; nextDay: numb
   const max = mode === "perPlayer" ? MAX_MATCHES_PER_PLAYER : MAX_MATCHES_PER_DAY;
   const total = mode === "perPlayer" ? Math.floor((n * count) / 2) : count;
   const possible = (players.length * (players.length - 1)) / 2;
+  const waiting = players.filter((p) => matches.some((m) => !played(m) && (m.player1Id === p.id || m.player2Id === p.id)));
   const metPairs = new Set(matches.map((m) => [m.player1Id, m.player2Id].sort().join())).size;
   const toggle = (id: string) =>
     setAbsent((prev) => {
@@ -419,6 +420,12 @@ function DayPlanner({ admin, nextDay, onDone }: { admin: AdminCtx; nextDay: numb
         </span>
         .
       </p>
+      {waiting.length > 0 && (
+        <p className="rounded-xl bg-surface-2 px-3 py-2.5 text-[13px] text-ink-2">
+          <span className="font-semibold text-ink">{waiting.length} still have a match to play</span> ({waiting.map((p) => p.name).join(", ")}). They’re only
+          picked if there aren’t enough other players.
+        </p>
+      )}
       <div>
         <span className="mb-1.5 block text-[13px] font-medium text-ink-2">When is Day {nextDay}?</span>
         <DatePicker value={date} onChange={setDate} />
@@ -502,6 +509,64 @@ function DayPlanner({ admin, nextDay, onDone }: { admin: AdminCtx; nextDay: numb
       >
         {busy ? "Creating…" : n < 2 ? "Pick at least 2 players" : `Create Day ${nextDay} · ${date ? formatDay(date) : "pick a date"} · ${total} matches`}
       </button>
+    </div>
+  );
+}
+
+function MoveMatch({ match, admin }: { match: Match; admin: AdminCtx }) {
+  const { matches } = admin.league!;
+  const [open, setOpen] = useState(false);
+  const days = [...new Map(matches.filter((m) => m.day !== match.day).map((m) => [m.day, m.dayDate])).entries()].sort((a, b) => b[0] - a[0]);
+  const newDay = Math.max(0, ...matches.map((m) => m.day)) + 1;
+  const [target, setTarget] = useState<string>("new");
+  const [date, setDate] = useState(() => nextMatchDate(matches));
+  const [tell, setTell] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="mt-2 text-[12px] font-medium text-ink-3 underline underline-offset-2">
+        Move to another day…
+      </button>
+    );
+  }
+  const day = target === "new" ? null : Number(target);
+  const label = day === null ? `Day ${newDay} · ${date ? formatDay(date) : "pick a date"}` : dayTitle(day, days.find(([d]) => d === day)?.[1] ?? null);
+
+  return (
+    <div className="mt-3 space-y-3 rounded-xl bg-surface-2 p-3">
+      <p className="text-[13px] font-medium">Move this match to</p>
+      <select value={target} onChange={(e) => setTarget(e.target.value)} aria-label="Move to day" className={cn(inputClass, "h-10 text-[15px]")}>
+        <option value="new">A new day (Day {newDay})</option>
+        {days.map(([d, dt]) => (
+          <option key={d} value={d}>
+            {dayTitle(d, dt)}
+          </option>
+        ))}
+      </select>
+      {day === null && <DatePicker value={date} onChange={setDate} />}
+      <label className="flex items-center gap-3">
+        <input type="checkbox" checked={tell} onChange={(e) => setTell(e.target.checked)} className="size-5" />
+        <span className="text-sm">Tell both players on Telegram</span>
+      </label>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={busy || (day === null && !date)}
+          onClick={async () => {
+            setBusy(true);
+            const ok = await admin.act({ action: "moveMatch", matchId: match.id, day, date: date || todayInput(), notify: tell }, `Match moved to ${label}.`);
+            setBusy(false);
+            if (ok) setOpen(false);
+          }}
+          className={buttonClass("primary", "md", "flex-1")}
+        >
+          {busy ? "Moving…" : `Move to ${label}`}
+        </button>
+        <button type="button" onClick={() => setOpen(false)} className={buttonClass("ghost", "md")}>
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }
@@ -816,6 +881,7 @@ function ScoreRow({
         </div>
       )}
       {detail && !complete && <p className="mt-2 text-[12px] text-ink-3">Fill in the points for all {games} games to save.</p>}
+      {!saved && admin.league!.season!.status === "active" && <MoveMatch match={match} admin={admin} />}
       {(changed || saved) && (
         <div className="mt-3 flex gap-2">
           {changed && (

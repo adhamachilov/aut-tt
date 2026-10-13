@@ -24,6 +24,8 @@ export function matchesForDay(players: number, target: DayTarget): number {
 
 /**
  * Plans one match day, fairly across the whole season:
+ * - players who still have an unplayed match are picked last (only when there aren't enough
+ *   free players), so nobody gets a second match before playing their first;
  * - players with the fewest matches so far are picked first, so everyone plays about equally;
  * - pairs that have never met come first, so nobody meets the same opponent again until
  *   every possible pairing (n×(n−1)/2) has been played;
@@ -32,7 +34,7 @@ export function matchesForDay(players: number, target: DayTarget): number {
 export function planMatchDay(
   present: readonly string[],
   target: DayTarget,
-  history: readonly { player1Id: string; player2Id: string }[],
+  history: readonly { player1Id: string; player2Id: string; played?: boolean }[],
   random: () => number = Math.random,
 ): PlannedMatch[] {
   const ids = [...new Set(present)];
@@ -45,9 +47,14 @@ export function planMatchDay(
 
   const met = new Map<string, number>();
   const playedBefore = new Map(ids.map((id) => [id, 0]));
+  // Matches already scheduled but not played yet. History without the flag counts as played.
+  const pending = new Map(ids.map((id) => [id, 0]));
   for (const m of history) {
     met.set(pairKey(m.player1Id, m.player2Id), (met.get(pairKey(m.player1Id, m.player2Id)) ?? 0) + 1);
-    for (const p of [m.player1Id, m.player2Id]) if (playedBefore.has(p)) playedBefore.set(p, playedBefore.get(p)! + 1);
+    for (const p of [m.player1Id, m.player2Id]) {
+      if (playedBefore.has(p)) playedBefore.set(p, playedBefore.get(p)! + 1);
+      if (m.played === false && pending.has(p)) pending.set(p, pending.get(p)! + 1);
+    }
   }
 
   let best: [string, string][] = [];
@@ -62,12 +69,18 @@ export function planMatchDay(
       const open = shuffle(ids.filter((id) => today.get(id)! < cap), random);
       if (open.length < 2) break;
       // Stable sorts keep the random order among equals.
-      open.sort((x, y) => today.get(x)! - today.get(y)! || (strict ? playedBefore.get(x)! - playedBefore.get(y)! : 0));
+      open.sort(
+        (x, y) =>
+          today.get(x)! - today.get(y)! ||
+          Math.min(pending.get(x)!, 1) - Math.min(pending.get(y)!, 1) ||
+          (strict ? playedBefore.get(x)! - playedBefore.get(y)! : 0),
+      );
       const a = open[0];
       const b = open
         .slice(1)
         .sort(
           (x, y) =>
+            Math.min(pending.get(x)!, 1) - Math.min(pending.get(y)!, 1) ||
             (seen.get(pairKey(a, x)) ?? 0) - (seen.get(pairKey(a, y)) ?? 0) ||
             today.get(x)! - today.get(y)! ||
             playedBefore.get(x)! - playedBefore.get(y)!,
@@ -80,7 +93,10 @@ export function planMatchDay(
       pairs.push([a, b]);
     }
     cost += (total - pairs.length) * 1e9;
-    for (const id of ids) cost += (playedBefore.get(id)! + today.get(id)!) ** 2;
+    for (const id of ids) {
+      cost += (playedBefore.get(id)! + today.get(id)!) ** 2;
+      if (pending.get(id)! > 0) cost += today.get(id)! * 1e6;
+    }
     if (cost < bestCost) {
       bestCost = cost;
       best = pairs;

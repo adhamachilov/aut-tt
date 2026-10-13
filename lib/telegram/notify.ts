@@ -35,6 +35,15 @@ function contact(p: Person): string {
   return p.username ? `@${html(p.username)}` : `<a href="tg://user?id=${p.telegramId}">${html(p.name)}</a>`;
 }
 
+const ORDINALS = ["1st", "2nd", "3rd"];
+
+/** "Your match: vs X", or "1st match: …, 2nd match: …" when someone plays more than once that day. */
+export function opponentLines(opponents: readonly Person[]): string[] {
+  const line = (p: Person) => `vs <b>${html(p.name)}</b> — ${contact(p)}`;
+  if (opponents.length === 1) return [`Your match: ${line(opponents[0])}`];
+  return opponents.map((p, i) => `${ORDINALS[i] ?? `${i + 1}th`} match: ${line(p)}`);
+}
+
 export function dayMessage(notice: DayNotice, me: Person, lines: string[]): string {
   const { LEAGUE_NAME } = env();
   const organizer = notice.organizer && notice.organizer.telegramId !== me.telegramId ? ` (${contact(notice.organizer)})` : "";
@@ -54,20 +63,20 @@ export function dayMessage(notice: DayNotice, me: Person, lines: string[]): stri
 /** Tells every player in a match day who they play. Failures (e.g. a player blocked the bot) are logged, not thrown. */
 export async function notifyMatchDay(notice: DayNotice) {
   const { APP_URL } = env();
-  const byPlayer = new Map<number, { me: Person; lines: string[] }>();
-  for (const m of notice.matches) {
+  const byPlayer = new Map<number, { me: Person; opponents: Person[] }>();
+  for (const m of [...notice.matches].sort((x, y) => x.round - y.round)) {
     for (const [me, them] of [
       [m.player1, m.player2],
       [m.player2, m.player1],
     ] as const) {
-      const entry = byPlayer.get(me.telegramId) ?? { me, lines: [] };
-      entry.lines.push(`Match ${m.round}: vs <b>${html(them.name)}</b> — ${contact(them)}`);
+      const entry = byPlayer.get(me.telegramId) ?? { me, opponents: [] };
+      entry.opponents.push(them);
       byPlayer.set(me.telegramId, entry);
     }
   }
 
   const button = APP_URL ? [[{ text: "🏓 Open League", web_app: { url: APP_URL } }]] : undefined;
-  const jobs = [...byPlayer].map(([chatId, { me, lines }]) => () => sendMessage(chatId, dayMessage(notice, me, lines), button));
+  const jobs = [...byPlayer].map(([chatId, { me, opponents }]) => () => sendMessage(chatId, dayMessage(notice, me, opponentLines(opponents)), button));
   let sent = 0;
   // Small batches stay well under Telegram's ~30 messages/second limit.
   for (let i = 0; i < jobs.length; i += 20) {

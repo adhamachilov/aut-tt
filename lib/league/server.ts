@@ -252,6 +252,13 @@ const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("removeMatchDay"), seasonId: id, day: z.number().int().positive() }),
   z.object({ action: z.literal("setDayDate"), seasonId: id, day: z.number().int().positive(), date: z.iso.date({ error: "Choose a date." }), notify: z.boolean() }),
   z.object({ action: z.literal("notifyDay"), seasonId: id, day: z.number().int().positive() }),
+  z.object({
+    action: z.literal("moveMatch"),
+    matchId: id,
+    day: z.number().int().positive().nullable(),
+    date: z.iso.date({ error: "Choose a date." }),
+    notify: z.boolean(),
+  }),
   z.object({ action: z.literal("finishSeason"), seasonId: id }),
   z.object({ action: z.literal("deleteSeason"), seasonId: id }),
   z.object({ action: z.literal("addToSeason"), seasonId: id, playerId: id }),
@@ -276,18 +283,19 @@ async function seasonRow(seasonId: string): Promise<SeasonRow> {
 }
 
 /** Everything needed to message the players of a day's unplayed matches. */
-export async function dayNotice(seasonId: string, day: number, note?: string): Promise<DayNotice> {
+export async function dayNotice(seasonId: string, day: number, note?: string, onlyMatchId?: string): Promise<DayNotice> {
   const [season, matches] = await Promise.all([
     seasonRow(seasonId),
     db()
       .from("matches")
-      .select("round, day_date, player1_id, player2_id")
+      .select("id, round, day_date, player1_id, player2_id")
       .eq("season_id", seasonId)
       .eq("day", day)
       .is("played_at", null)
       .order("round")
-      .returns<{ round: number; day_date: string | null; player1_id: string; player2_id: string }[]>()
-      .then(ok),
+      .returns<{ id: string; round: number; day_date: string | null; player1_id: string; player2_id: string }[]>()
+      .then(ok)
+      .then((rows) => (onlyMatchId ? rows.filter((m) => m.id === onlyMatchId) : rows)),
   ]);
   const ids = [...new Set(matches.flatMap((m) => [m.player1_id, m.player2_id]))];
   const admins = [...adminTelegramIds()];
@@ -313,10 +321,10 @@ export async function dayNotice(seasonId: string, day: number, note?: string): P
 }
 
 /** Messages the day's players after the response is sent, so the admin doesn't wait on Telegram. */
-function notifyLater(seasonId: string, day: number, note?: string) {
+function notifyLater(seasonId: string, day: number, note?: string, onlyMatchId?: string) {
   if (!env().TELEGRAM_BOT_TOKEN) return;
   after(async () => {
-    const notice = await dayNotice(seasonId, day, note);
+    const notice = await dayNotice(seasonId, day, note, onlyMatchId);
     if (notice.matches.length) await notifyMatchDay(notice);
   });
 }
@@ -355,7 +363,12 @@ export async function runAdminAction(input: unknown): Promise<void> {
     case "addMatchDay": {
       const [entries, history] = await Promise.all([
         db().from("season_players").select("player_id").eq("season_id", a.seasonId).returns<{ player_id: string }[]>().then(ok),
-        db().from("matches").select("player1_id, player2_id").eq("season_id", a.seasonId).returns<{ player1_id: string; player2_id: string }[]>().then(ok),
+        db()
+          .from("matches")
+          .select("player1_id, player2_id, played_at")
+          .eq("season_id", a.seasonId)
+          .returns<{ player1_id: string; player2_id: string; played_at: string | null }[]>()
+          .then(ok),
       ]);
       const inSeason = new Set(entries.map((e) => e.player_id));
       if (a.playerIds.some((p) => !inSeason.has(p))) throw new UserError("Some of those players aren't in this season.");
@@ -363,7 +376,7 @@ export async function runAdminAction(input: unknown): Promise<void> {
       const plan = planMatchDay(
         a.playerIds,
         a.mode === "perPlayer" ? { perPlayer: a.count } : { total: a.count },
-        history.map((m) => ({ player1Id: m.player1_id, player2Id: m.player2_id })),
+        history.map((m) => ({ player1Id: m.player1_id, player2Id: m.player2_id, played: m.played_at !== null })),
       );
       const day = ok(await db().rpc("add_match_day", { p_season: a.seasonId, p_date: a.date, p_matches: plan })) as number;
       if (a.notify) notifyLater(a.seasonId, day);
@@ -374,6 +387,30 @@ export async function runAdminAction(input: unknown): Promise<void> {
       const rows = ok(await db().from("matches").update({ day_date: a.date }).eq("season_id", a.seasonId).eq("day", a.day).select("id"));
       if (!rows.length) throw new UserError("That day has no matches.");
       if (a.notify) notifyLater(a.seasonId, a.day, `Date changed: Day ${a.day} is now on ${dayLabel(a.date)}.`);
+      return;
+    }
+
+    case "moveMatch": {
+      const m = maybe(
+        await db().from("matches").select("season_id, day, played_at").eq("id", a.matchId).maybeSingle<{ season_id: string; day: number; played_at: string | null }>(),
+      );
+      if (!m) throw new UserError("Match not found.");
+      if (m.played_at) throw new UserError("Only matches without a result can be moved.");
+      const all = ok(
+        await db().from("matches").select("day, day_date, round").eq("season_id", m.season_id).returns<{ day: number; day_date: string | null; round: number }[]>(),
+      );
+      let day = a.day ?? Math.max(0, ...all.map((x) => x.day)) + 1;
+      let date = a.date;
+      if (a.day !== null) {
+        const target = all.filter((x) => x.day === a.day);
+        if (!target.length) throw new UserError("That day doesn't exist.");
+        if (a.day === m.day) throw new UserError("The match is already on that day.");
+        date = target[0].day_date ?? a.date;
+        day = a.day;
+      }
+      const round = Math.max(0, ...all.filter((x) => x.day === day).map((x) => x.round)) + 1;
+      ok(await db().from("matches").update({ day, day_date: date, round }).eq("id", a.matchId).is("played_at", null));
+      if (a.notify) notifyLater(m.season_id, day, `Your match was moved to Day ${day} · ${dayLabel(date)}.`, a.matchId);
       return;
     }
 

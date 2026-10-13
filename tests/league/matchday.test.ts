@@ -82,6 +82,30 @@ describe("planMatchDay: total matches per day", () => {
   });
 });
 
+describe("planMatchDay: unplayed matches", () => {
+  it("doesn't give a second match to players who haven't played their first yet", () => {
+    const players = ids(8);
+    // p0–p1 and p2–p3 are scheduled but not played; p4–p5 already played.
+    const history = [
+      { player1Id: "p0", player2Id: "p1", played: false },
+      { player1Id: "p2", player2Id: "p3", played: false },
+      { player1Id: "p4", player2Id: "p5", played: true },
+    ];
+    for (let run = 0; run < 20; run++) {
+      const day = planMatchDay(players, { total: 2 }, history);
+      const picked = day.flatMap((m) => [m.player1, m.player2]);
+      expect(picked.some((p) => ["p0", "p1", "p2", "p3"].includes(p))).toBe(false);
+    }
+  });
+
+  it("still uses them when there aren't enough free players", () => {
+    const history = [{ player1Id: "p0", player2Id: "p1", played: false }];
+    const day = planMatchDay(ids(4), { total: 2 }, history);
+    expect(day).toHaveLength(2);
+    expect(new Set(day.flatMap((m) => [m.player1, m.player2])).size).toBe(4);
+  });
+});
+
 describe("planMatchDay: basics", () => {
   it("numbers matches in order of play and avoids back-to-back games when possible", () => {
     const plan = planMatchDay(ids(8), { perPlayer: 2 }, []);
