@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isValidScore, scoreFromGames, scoreOptions } from "@/lib/league/rules";
+import { isValidScore, scoreFromGames, scoreOptions, walkover } from "@/lib/league/rules";
 
 describe("match format (every game is played)", () => {
   it("accepts only scores that add up to the number of games", () => {
@@ -29,5 +29,12 @@ describe("scoreFromGames", () => {
 
   it("rejects a drawn game", () => {
     expect(scoreFromGames([[11, 9], [10, 10], [11, 4]])).toBeNull();
+  });
+});
+
+describe("walkover", () => {
+  it("gives the player who came every game 11–0", () => {
+    expect(walkover(3, 1)).toEqual({ score: [3, 0], games: [[11, 0], [11, 0], [11, 0]] });
+    expect(walkover(3, 2)).toEqual({ score: [0, 3], games: [[0, 11], [0, 11], [0, 11]] });
   });
 });

@@ -4,6 +4,17 @@ export type GamesPerMatch = (typeof GAMES_PER_MATCH)[number];
 export const DEFAULT_GAMES_PER_MATCH: GamesPerMatch = 3;
 
 export const MAX_MATCHES_PER_PLAYER = 10;
+
+export const MATCH_HOURS = { from: "11:00", to: "13:00" } as const;
+export const scheduleText = `Matches are played between ${MATCH_HOURS.from} and ${MATCH_HOURS.to}. A no-show loses 3–0 (11–0 every game).`;
+
+/** A no-show forfeit: the player who came wins every game 11–0. */
+export function walkover(games: number, winner: 1 | 2): { score: [number, number]; games: [number, number][] } {
+  return {
+    score: winner === 1 ? [games, 0] : [0, games],
+    games: Array.from({ length: games }, (): [number, number] => (winner === 1 ? [11, 0] : [0, 11])),
+  };
+}
 export const MAX_MATCHES_PER_DAY = 100;
 
 export function isValidScore(games: number, a: number, b: number): boolean {

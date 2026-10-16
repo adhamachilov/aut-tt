@@ -17,7 +17,7 @@ import {
 } from "@/lib/telegram/notify";
 import { UserError } from "./http";
 import { planMatchDay } from "./matchday";
-import { GAMES_PER_MATCH, isValidScore, scoreFromGames, MAX_MATCHES_PER_DAY, MAX_MATCHES_PER_PLAYER } from "./rules";
+import { GAMES_PER_MATCH, isValidScore, scoreFromGames, walkover, MAX_MATCHES_PER_DAY, MAX_MATCHES_PER_PLAYER } from "./rules";
 import { computeStandings } from "./standings";
 import {
   ALL_MAJORS,
@@ -82,6 +82,7 @@ interface MatchRow {
   score1: number | null;
   score2: number | null;
   game_scores: [number, number][] | null;
+  outcome: "walkover" | "both_absent" | null;
   played_at: string | null;
 }
 
@@ -143,6 +144,7 @@ const toMatch = (m: MatchRow): Match => ({
   score1: m.score1,
   score2: m.score2,
   games: m.game_scores,
+  outcome: m.outcome,
   playedAt: m.played_at,
 });
 
@@ -274,6 +276,7 @@ const actionSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("deleteSeason"), seasonId: id }),
   z.object({ action: z.literal("addToSeason"), seasonId: id, playerId: id }),
   z.object({ action: z.literal("removeFromSeason"), seasonId: id, playerId: id }),
+  z.object({ action: z.literal("noShow"), matchId: id, absent: z.enum(["player1", "player2", "both"]) }),
   z.object({
     action: z.literal("setScore"),
     matchId: id,
@@ -438,6 +441,8 @@ async function notifyResult(matchId: string, corrected: boolean) {
         myScore: side.mine,
         theirScore: side.theirs,
         games: side.games,
+        outcome: m.outcome,
+        noShows: row.noShows,
         position: row.position,
         points: row.points,
       });
@@ -612,6 +617,27 @@ export async function runAdminAction(input: unknown): Promise<void> {
       ok(await db().from("season_players").delete().eq("season_id", a.seasonId).eq("player_id", a.playerId));
       return;
 
+    case "noShow": {
+      const m = maybe(
+        await db()
+          .from("matches")
+          .select("played_at, season:seasons(games_per_match)")
+          .eq("id", a.matchId)
+          .maybeSingle<{ played_at: string | null; season: { games_per_match: number } }>(),
+      );
+      if (!m) throw new UserError("Match not found.");
+      const patch =
+        a.absent === "both"
+          ? { score1: 0, score2: 0, game_scores: null, outcome: "both_absent" as const }
+          : (() => {
+              const w = walkover(m.season.games_per_match, a.absent === "player1" ? 2 : 1);
+              return { score1: w.score[0], score2: w.score[1], game_scores: w.games, outcome: "walkover" as const };
+            })();
+      ok(await db().from("matches").update({ ...patch, played_at: new Date().toISOString() }).eq("id", a.matchId));
+      if (env().TELEGRAM_BOT_TOKEN) after(() => notifyResult(a.matchId, !!m.played_at));
+      return;
+    }
+
     case "setScore": {
       let { score1, score2 } = a;
       const games = a.games?.length ? a.games : null;
@@ -638,7 +664,7 @@ export async function runAdminAction(input: unknown): Promise<void> {
       const rows = ok(
         await db()
           .from("matches")
-          .update({ score1, score2, game_scores: played ? games : null, played_at: played ? new Date().toISOString() : null })
+          .update({ score1, score2, game_scores: played ? games : null, outcome: null, played_at: played ? new Date().toISOString() : null })
           .eq("id", a.matchId)
           .select("id"),
       );

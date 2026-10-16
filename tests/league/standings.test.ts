@@ -14,6 +14,7 @@ const m = (p1: string, p2: string, s1: number | null = null, s2: number | null =
   score1: s1,
   score2: s2,
   games: null,
+  outcome: null,
   playedAt: s1 === null ? null : new Date(2026, 0, 1, 0, n).toISOString(),
 });
 const order = (matches: Match[]) => computeStandings(players, matches).map((r) => r.playerId);
@@ -53,6 +54,17 @@ describe("computeStandings", () => {
     // Dan won 1 of 1 (3–0): equal wins, Dan's difference is better.
     const rows = order([m("a", "b", 2, 1), m("c", "a", 2, 1), m("d", "b", 3, 0)]);
     expect(rows.indexOf("d")).toBeLessThan(rows.indexOf("a"));
+  });
+
+  it("counts no-shows: both absent is played with no points, a walkover counts for the absent player", () => {
+    const both = { ...m("a", "b", 0, 0), outcome: "both_absent" as const };
+    const walk = { ...m("c", "d", 3, 0), outcome: "walkover" as const };
+    const rows = computeStandings(players, [both, walk]);
+    const row = (id: string) => rows.find((r) => r.playerId === id)!;
+    expect(row("a")).toMatchObject({ played: 1, wins: 0, losses: 0, points: 0, noShows: 1 });
+    expect(row("b")).toMatchObject({ played: 1, wins: 0, losses: 0, points: 0, noShows: 1 });
+    expect(row("c")).toMatchObject({ played: 1, wins: 1, points: 3, noShows: 0 });
+    expect(row("d")).toMatchObject({ played: 1, losses: 1, points: 0, noShows: 1 });
   });
 
   it("is stable by name when everything is equal", () => {

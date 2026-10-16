@@ -165,7 +165,7 @@ export function PlayerSheet({ playerId, onClose }: { playerId: string; onClose: 
                   <span className="text-ink-3">vs </span>
                   {oppId === me.player!.id ? "You" : (opp?.name ?? "Removed player")}
                 </span>
-                <span className="num shrink-0 text-[15px] font-semibold">{winner ? `${own}–${other}` : <span className="text-[13px] font-normal text-ink-3">Day {m.day}</span>}</span>
+                <span className="num shrink-0 text-[15px] font-semibold">{winner ? `${own}–${other}${m.outcome === "walkover" ? " (no-show)" : ""}` : m.outcome === "both_absent" ? <span className="text-[13px] font-normal text-danger">0–0 · both absent</span> : <span className="text-[13px] font-normal text-ink-3">Day {m.day}</span>}</span>
               </li>
             );
           })}

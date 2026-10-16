@@ -9,10 +9,20 @@ export function computeStandings(players: readonly { id: string; name: string }[
     .sort((a, b) => (b.playedAt ?? "").localeCompare(a.playedAt ?? ""));
 
   const rows = new Map<string, StandingRow>(
-    players.map((p) => [p.id, { playerId: p.id, position: 0, played: 0, wins: 0, losses: 0, points: 0, scoreFor: 0, scoreAgainst: 0, form: [] }]),
+    players.map((p) => [p.id, { playerId: p.id, position: 0, played: 0, wins: 0, losses: 0, points: 0, noShows: 0, scoreFor: 0, scoreAgainst: 0, form: [] }]),
   );
 
   for (const m of played) {
+    // Neither came: the match is closed 0–0, counts as played, but nobody wins or scores.
+    if (m.outcome === "both_absent") {
+      for (const id of [m.player1Id, m.player2Id]) {
+        const row = rows.get(id);
+        if (!row) continue;
+        row.played++;
+        row.noShows++;
+      }
+      continue;
+    }
     const sides = [
       [m.player1Id, m.score1!, m.score2!],
       [m.player2Id, m.score2!, m.score1!],
@@ -28,6 +38,7 @@ export function computeStandings(players: readonly { id: string; name: string }[
       row.scoreFor += own;
       row.scoreAgainst += other;
       if (row.form.length < 5) row.form.push(won ? "W" : "L");
+      if (m.outcome === "walkover" && !won) row.noShows++;
     }
   }
 

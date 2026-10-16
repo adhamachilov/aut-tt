@@ -40,13 +40,14 @@ describe("notifyMatchDay", () => {
     expect(bek).toContain("⚠️ <b>Correction: Day 2 is on Tuesday 6 Oct.</b>");
     expect(bek).toContain("Day 2 · Tue 6 Oct");
     expect(bek).toContain("Your match: vs <b>Adham</b> — @a_adham");
-    expect(bek).toContain("agree on a time to play. Then tell the organizer (@a_adham) the time you chose.");
+    expect(bek).toContain("Play your match on that day between <b>11:00 and 13:00</b>. If you don't show up, you lose 3–0 (11–0 every game).");
+    expect(bek).toContain("Questions? Message the organizer: @a_adham");
 
     const adham = sent.find((m) => m.chatId === 1)!.text;
     expect(adham).toContain("1st match: vs <b>Bek &lt;script&gt;</b> — @bek_1");
     // Cara has no username: a tap-to-open mention instead.
     expect(adham).toContain('2nd match: vs <b>Cara</b> — <a href="tg://user?id=3">Cara</a>');
-    // The organizer isn't told to tell themselves.
-    expect(adham).toContain("Then tell the organizer the time you chose.");
+    // The organizer isn't told to message themselves.
+    expect(adham).not.toContain("Message the organizer");
   });
 });

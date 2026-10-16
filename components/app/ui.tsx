@@ -74,7 +74,7 @@ export function Sheet({ title, onClose, children }: { title: ReactNode; onClose:
 
 export const played = (m: Match) => m.score1 !== null && m.score2 !== null;
 
-export const winnerOf = (m: Match) => (!played(m) ? null : m.score1! > m.score2! ? m.player1Id : m.player2Id);
+export const winnerOf = (m: Match) => (!played(m) || m.score1 === m.score2 ? null : m.score1! > m.score2! ? m.player1Id : m.player2Id);
 
 // One match, seen from `meId`'s side when they play in it (they go on the left).
 export function MatchCard({
@@ -124,12 +124,14 @@ export function MatchCard({
             {winner === meId ? "Won" : "Lost"}
           </span>
         )}
-        {!winner && <span>Not played yet</span>}
+        {match.outcome === "both_absent" ? <span className="font-medium text-danger">Both absent · 0 points</span> : !winner && <span>Not played yet</span>}
       </div>
       <div className="flex items-center gap-3">
         {side(left, "left")}
         <div className="num shrink-0 text-center font-display text-[22px] font-semibold leading-none">
-          {winner ? (
+          {match.outcome === "both_absent" ? (
+            <span className="text-ink-3">0–0</span>
+          ) : winner ? (
             <>
               <span className={winner === left ? "text-ink" : "text-ink-3"}>{leftScore}</span>
               <span className="mx-1 text-ink-3">–</span>
@@ -141,7 +143,11 @@ export function MatchCard({
         </div>
         {side(right, "right")}
       </div>
-      {winner && match.games && <p className="num mt-2 text-center text-[12px] text-ink-3">{gamesText(match.games, flip)}</p>}
+      {match.outcome === "walkover" ? (
+        <p className="mt-2 text-center text-[12px] font-medium text-danger">No-show · {players.get(winner === match.player1Id ? match.player2Id : match.player1Id)?.name ?? "Opponent"} didn’t come</p>
+      ) : (
+        winner && match.games && <p className="num mt-2 text-center text-[12px] text-ink-3">{gamesText(match.games, flip)}</p>
+      )}
     </div>
   );
 }

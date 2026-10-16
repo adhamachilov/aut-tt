@@ -274,6 +274,7 @@ function Participants({ admin }: { admin: AdminCtx }) {
   const { season, players } = league!;
   const [adding, setAdding] = useState("");
   const joinedIds = new Set(players.map((p) => p.id));
+  const noShows = new Map(league!.standings.map((r) => [r.playerId, r.noShows]));
   const addable = (everyone ?? []).filter((p) => !joinedIds.has(p.id) && !p.banned);
 
   const remove = async (p: LeaguePlayer) => {
@@ -318,7 +319,10 @@ function Participants({ admin }: { admin: AdminCtx }) {
               <button type="button" onClick={() => openPlayer(p.id)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
                 <Avatar name={p.name} size={32} />
                 <span className="min-w-0">
-                  <span className="block truncate text-[15px] font-medium">{p.name}</span>
+                  <span className="flex items-center gap-2">
+                    <span className="truncate text-[15px] font-medium">{p.name}</span>
+                    {(noShows.get(p.id) ?? 0) > 0 && <Pill tone="danger">{noShows.get(p.id)} no-show{noShows.get(p.id)! > 1 ? "s" : ""}</Pill>}
+                  </span>
                   <span className="block truncate text-[12px] text-ink-3">
                     {p.major} · {yearLabel(p.year)}
                   </span>
@@ -509,6 +513,39 @@ function DayPlanner({ admin, nextDay, onDone }: { admin: AdminCtx; nextDay: numb
       >
         {busy ? "Creating…" : n < 2 ? "Pick at least 2 players" : `Create Day ${nextDay} · ${date ? formatDay(date) : "pick a date"} · ${total} matches`}
       </button>
+    </div>
+  );
+}
+
+function NoShow({ match, admin, name }: { match: Match; admin: AdminCtx; name: (id: string) => string }) {
+  const counts = new Map(admin.league!.standings.map((r) => [r.playerId, r.noShows]));
+  const games = admin.league!.season!.gamesPerMatch;
+  const nth = (n: number) => (n === 1 ? "1st" : n === 2 ? "2nd" : n === 3 ? "3rd" : `${n}th`);
+  const record = async (absent: "player1" | "player2" | "both") => {
+    const who = absent === "both" ? [match.player1Id, match.player2Id] : [absent === "player1" ? match.player1Id : match.player2Id];
+    const strikes = who.map((id) => `${name(id)}: ${nth((counts.get(id) ?? 0) + 1)} no-show${(counts.get(id) ?? 0) + 1 >= 2 ? " (the rules say a 2nd one means removal)" : ""}`);
+    const what =
+      absent === "both"
+        ? "Close the match 0–0, with no points for either player?"
+        : `${name(who[0])} didn't come: ${name(absent === "player1" ? match.player2Id : match.player1Id)} wins ${games}–0 (11–0 every game).`;
+    if (!(await admin.confirm(`${what}\n\n${strikes.join("\n")}\n\nBoth players get a message.`))) return;
+    await admin.act({ action: "noShow", matchId: match.id, absent }, absent === "both" ? "Closed 0–0: both absent." : "Walkover saved.");
+  };
+  const first = (id: string) => name(id).split(" ")[0];
+  return (
+    <div className="mt-3 border-t border-line pt-2.5">
+      <p className="mb-1.5 text-[12px] text-ink-3">No-show</p>
+      <div className="flex flex-wrap gap-1.5">
+        <button type="button" onClick={() => record("player1")} className={buttonClass("secondary", "sm")}>
+          {first(match.player1Id)} didn’t come
+        </button>
+        <button type="button" onClick={() => record("player2")} className={buttonClass("secondary", "sm")}>
+          {first(match.player2Id)} didn’t come
+        </button>
+        <button type="button" onClick={() => record("both")} className={buttonClass("secondary", "sm")}>
+          Neither came
+        </button>
+      </div>
     </div>
   );
 }
@@ -721,7 +758,11 @@ function Results({ admin }: { admin: AdminCtx }) {
                         {m.score1}–{m.score2}
                       </span>
                       <span className={m.score2! > m.score1! ? "font-semibold" : "text-ink-2"}>{name(m.player2Id)}</span>
-                      {m.games && <span className="block text-[12px] text-ink-3">{gamesText(m.games)}</span>}
+                      {m.outcome ? (
+                        <span className="block text-[12px] font-medium text-danger">{m.outcome === "both_absent" ? "Both absent · 0 points" : "No-show · walkover"}</span>
+                      ) : (
+                        m.games && <span className="block text-[12px] text-ink-3">{gamesText(m.games)}</span>
+                      )}
                     </span>
                     <span className="shrink-0 text-[13px] font-medium text-ink-3">Edit</span>
                   </button>
@@ -765,7 +806,7 @@ function ScoreRow({
   const savedGames = JSON.stringify(match.games ?? null);
   const nowGames = detail && complete ? JSON.stringify(parsed) : "null";
   const changed = !!pick && (!saved || pick[0] !== saved[0] || pick[1] !== saved[1] || nowGames !== savedGames);
-  const lead = pick ? (pick[0] > pick[1] ? 1 : 2) : null;
+  const lead = pick && pick[0] !== pick[1] ? (pick[0] > pick[1] ? 1 : 2) : null;
   const setPoint = (game: number, side: 0 | 1, value: string) =>
     setPoints((prev) => prev.map((g, i) => (i === game ? g.map((v, j) => (j === side ? value.replace(/\D/g, "").slice(0, 2) : v)) : g)));
   const options = scoreOptions(games);
@@ -881,6 +922,7 @@ function ScoreRow({
         </div>
       )}
       {detail && !complete && <p className="mt-2 text-[12px] text-ink-3">Fill in the points for all {games} games to save.</p>}
+      {!saved && admin.league!.season!.status === "active" && <NoShow match={match} admin={admin} name={name} />}
       {!saved && admin.league!.season!.status === "active" && <MoveMatch match={match} admin={admin} />}
       {(changed || saved) && (
         <div className="mt-3 flex gap-2">

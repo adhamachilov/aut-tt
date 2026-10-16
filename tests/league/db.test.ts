@@ -195,6 +195,17 @@ describe("match days", () => {
     await set(null, null);
   });
 
+  it("allows 0-0 only when both players were absent", async () => {
+    const { s, ids } = await running(2);
+    await addDay(s, ids, 1);
+    const id = (await db.query<{ id: string }>("select id from public.matches where season_id = $1", [s])).rows[0].id;
+    expect(await fails(db.query("update public.matches set score1 = 0, score2 = 0, played_at = now() where id = $1", [id]))).toMatch(/check/);
+    expect(await fails(db.query("update public.matches set score1 = 3, score2 = 0, played_at = now(), outcome = 'both_absent' where id = $1", [id]))).toMatch(/check/);
+    await db.query("update public.matches set score1 = 0, score2 = 0, played_at = now(), outcome = 'both_absent' where id = $1", [id]);
+    await db.query("update public.matches set score1 = 3, score2 = 0, outcome = 'walkover' where id = $1", [id]);
+    expect(await fails(db.query("update public.matches set score1 = null, score2 = null, played_at = null where id = $1", [id]))).toMatch(/check/);
+  });
+
   it("stores game scores only together with a result", async () => {
     const { s, ids } = await running(2);
     await addDay(s, ids, 1);

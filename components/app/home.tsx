@@ -5,7 +5,7 @@ import { yearLabel } from "@/lib/league/types";
 import { buttonClass, Card, Pill } from "@/components/ui/primitives";
 import { useLeague } from "./league-app";
 import { ProfileForm } from "./profile-form";
-import { rulesText } from "@/lib/league/rules";
+import { rulesText, scheduleText } from "@/lib/league/rules";
 import { Avatar, byDayThenOrder, formatDateTime, MatchCard, played, Sheet } from "./ui";
 
 const PLAYER_PREVIEW = 10;
@@ -64,7 +64,7 @@ export function HomeTab() {
               <p className="mt-2 text-sm text-ink-2">Closes {formatDateTime(season.registrationClosesAt)}</p>
             )}
             {!season.acceptingPlayers && <p className="mt-2 text-sm text-ink-2">The schedule will appear here when the season starts.</p>}
-            <p className="mt-2 text-[13px] text-ink-3">{rulesText(season.gamesPerMatch)} Matches are scheduled day by day.</p>
+            <p className="mt-2 text-[13px] text-ink-3">{rulesText(season.gamesPerMatch)} {scheduleText}</p>
 
             <div className="mt-5">
               {joined ? (
@@ -112,7 +112,9 @@ export function HomeTab() {
               </span>
             </div>
             <h2 className="mt-3 font-display text-[30px] font-semibold uppercase leading-none">{season.name}</h2>
-            <p className="mt-2 text-[13px] text-ink-3">{rulesText(season.gamesPerMatch)}</p>
+            <p className="mt-2 text-[13px] text-ink-3">
+              {rulesText(season.gamesPerMatch)} {scheduleText}
+            </p>
             {season.status === "finished" && standings[0] && standings[0].played > 0 && (
               <p className="mt-2 text-sm text-ink-2">
                 🏆 Champion: <span className="font-semibold text-ink">{byId.get(standings[0].playerId)?.name}</span>

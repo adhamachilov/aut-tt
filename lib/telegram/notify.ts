@@ -1,6 +1,6 @@
 import "server-only";
 import { env } from "@/lib/env";
-import { rulesText } from "@/lib/league/rules";
+import { MATCH_HOURS, rulesText } from "@/lib/league/rules";
 import { html, sendMessage } from "./bot";
 
 export interface Person {
@@ -44,9 +44,16 @@ export function opponentLines(opponents: readonly Person[]): string[] {
   return opponents.map((p, i) => `${ORDINALS[i] ?? `${i + 1}th`} match: ${line(p)}`);
 }
 
+/** The match-time rule and who to ask, shared by every message about upcoming matches. */
+function timeRule(organizer: Person | null, me: Person, when = "on that day"): string[] {
+  const ask = organizer && organizer.telegramId !== me.telegramId ? `\nQuestions? Message the organizer: ${contact(organizer)}` : "";
+  return [
+    `⏰ Play your match ${when} between <b>${MATCH_HOURS.from} and ${MATCH_HOURS.to}</b>. If you don't show up, you lose 3–0 (11–0 every game).${ask}`,
+  ];
+}
+
 export function dayMessage(notice: DayNotice, me: Person, lines: string[]): string {
   const { LEAGUE_NAME } = env();
-  const organizer = notice.organizer && notice.organizer.telegramId !== me.telegramId ? ` (${contact(notice.organizer)})` : "";
   return [
     `🏓 <b>${html(LEAGUE_NAME)}</b>`,
     ...(notice.note ? [`\n⚠️ <b>${html(notice.note)}</b>`] : []),
@@ -54,7 +61,7 @@ export function dayMessage(notice: DayNotice, me: Person, lines: string[]): stri
     "",
     ...lines,
     "",
-    `⏰ Message your opponent and agree on a time to play. Then tell the organizer${organizer} the time you chose.`,
+    ...timeRule(notice.organizer, me),
     "",
     html(rulesText(notice.gamesPerMatch)),
   ].join("\n");
@@ -99,13 +106,12 @@ export interface ReminderMatch {
 export function reminderMessage(today: ReminderMatch[], overdue: ReminderMatch[], organizer: Person | null, me: Person): string {
   const { LEAGUE_NAME } = env();
   const line = (m: ReminderMatch) => `vs <b>${html(m.opponent.name)}</b> — ${contact(m.opponent)}`;
-  const tellOrganizer = organizer && organizer.telegramId !== me.telegramId ? ` (${contact(organizer)})` : "";
   return [
     `🏓 <b>${html(LEAGUE_NAME)}</b>`,
     ...(today.length ? ["", `☀️ <b>You play today · Day ${today[0].day} · ${dayLabel(today[0].date)}</b>`, ...today.map(line)] : []),
     ...(overdue.length ? ["", "⏳ <b>Still to play</b>", ...overdue.map((m) => `Day ${m.day} · ${dayLabel(m.date)}: ${line(m)}`)] : []),
     "",
-    `⏰ If you haven't yet, message your opponent and agree on a time. Then tell the organizer${tellOrganizer} the time you chose.`,
+    ...timeRule(organizer, me, today.length ? "today" : "as soon as possible"),
   ].join("\n");
 }
 
@@ -119,22 +125,45 @@ export interface ResultNotice {
   theirScore: number;
   /** Game points from my side, e.g. [[11, 9], [7, 11]]. */
   games: [number, number][] | null;
+  outcome: "walkover" | "both_absent" | null;
+  /** My no-shows so far, including this one if I missed it. */
+  noShows: number;
   position: number;
   points: number;
+}
+
+const pts = (n: number) => `${n} ${n === 1 ? "point" : "points"}`;
+
+function noShowWarning(count: number): string {
+  return count >= 2
+    ? `This is your no-show #${count}. The organizer may remove you from the tournament.`
+    : "This is your 1st no-show. A 2nd one removes you from the tournament.";
 }
 
 export function resultMessage(r: ResultNotice): string {
   const { LEAGUE_NAME } = env();
   const won = r.myScore > r.theirScore;
   const games = r.games?.length ? ` (${r.games.map(([a, b]) => `${a}–${b}`).join(" · ")})` : "";
-  return [
-    `🏓 <b>${html(LEAGUE_NAME)}</b>`,
-    "",
-    `${r.corrected ? "✏️ <b>Result corrected</b>" : "✅ <b>Result saved</b>"} · Day ${r.day}${r.date ? ` · ${dayLabel(r.date)}` : ""}`,
-    `${won ? "🏆 You beat" : "You lost to"} <b>${html(r.opponent.name)}</b> ${r.myScore}–${r.theirScore}${games}`,
-    "",
-    `+${r.myScore} ${r.myScore === 1 ? "point" : "points"} · You're <b>#${r.position}</b> with ${r.points} ${r.points === 1 ? "point" : "points"}.`,
-  ].join("\n");
+  const when = ` · Day ${r.day}${r.date ? ` · ${dayLabel(r.date)}` : ""}`;
+  const standing = `You're <b>#${r.position}</b> with ${pts(r.points)}.`;
+  const them = `<b>${html(r.opponent.name)}</b>`;
+
+  let body: string[];
+  if (r.outcome === "both_absent") {
+    body = [`❌ <b>No-show</b>${when}`, `Neither you nor ${them} came, so the match is closed 0–0 with no points.`, "", noShowWarning(r.noShows), standing];
+  } else if (r.outcome === "walkover" && !won) {
+    body = [`❌ <b>No-show</b>${when}`, `You missed your match vs ${them}, so it counts as a ${r.myScore}–${r.theirScore} loss.`, "", noShowWarning(r.noShows), standing];
+  } else if (r.outcome === "walkover") {
+    body = [`✅ <b>Walkover</b>${when}`, `${them} didn't show up, so you win ${r.myScore}–${r.theirScore}${games}.`, "", `+${pts(r.myScore)} · ${standing}`];
+  } else {
+    body = [
+      `${r.corrected ? "✏️ <b>Result corrected</b>" : "✅ <b>Result saved</b>"}${when}`,
+      `${won ? "🏆 You beat" : "You lost to"} ${them} ${r.myScore}–${r.theirScore}${games}`,
+      "",
+      `+${pts(r.myScore)} · ${standing}`,
+    ];
+  }
+  return [`🏓 <b>${html(LEAGUE_NAME)}</b>`, "", ...body].join("\n");
 }
 
 export interface TableLine {
@@ -159,13 +188,12 @@ export function nextMessage(upcoming: ReminderMatch[], organizer: Person | null,
   if (!upcoming.length) {
     return `🏓 <b>${html(LEAGUE_NAME)}</b>\n\nYou have no matches waiting right now. You'll get a message as soon as you're picked for a match day.`;
   }
-  const tellOrganizer = organizer && organizer.telegramId !== me.telegramId ? ` (${contact(organizer)})` : "";
   return [
     `🏓 <b>${html(LEAGUE_NAME)}</b>`,
     "",
     "<b>Your next matches</b>",
     ...upcoming.map((m) => `Day ${m.day} · ${dayLabel(m.date)}: vs <b>${html(m.opponent.name)}</b> — ${contact(m.opponent)}`),
     "",
-    `⏰ Agree on a time with your opponent, then tell the organizer${tellOrganizer}.`,
+    ...timeRule(organizer, me, "on its day"),
   ].join("\n");
 }

@@ -99,6 +99,8 @@ export interface Match {
   score2: number | null;
   /** Points in each game, player 1 first, e.g. [[11, 9], [7, 11], [11, 4]]. Optional. */
   games: [number, number][] | null;
+  /** null = played normally; walkover = one player didn't come; both_absent = neither came (0–0). */
+  outcome: "walkover" | "both_absent" | null;
   playedAt: string | null;
 }
 
@@ -109,6 +111,8 @@ export interface StandingRow {
   wins: number;
   losses: number;
   points: number;
+  /** Matches this player missed (walkovers lost, or both absent). */
+  noShows: number;
   scoreFor: number;
   scoreAgainst: number;
   /** Last results, most recent first. */
@@ -143,6 +147,7 @@ export type AdminAction =
   | { action: "deleteSeason"; seasonId: string }
   | { action: "addToSeason"; seasonId: string; playerId: string }
   | { action: "removeFromSeason"; seasonId: string; playerId: string }
+  | { action: "noShow"; matchId: string; absent: "player1" | "player2" | "both" }
   | { action: "setScore"; matchId: string; score1: number | null; score2: number | null; games?: [number, number][] | null }
   | { action: "updatePlayer"; playerId: string; name: string; major: string; year: Year }
   | { action: "setBanned"; playerId: string; banned: boolean };
